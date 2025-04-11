@@ -220,6 +220,7 @@ export function RtShare() {
 
     return (
         <div className="rt-share-container">
+            <h2 class="mb-3">{sessionId}</h2>
             <div className="rt-share-layout">
                 <div className="user-list">
                     <h2>{users.filter(user => user.id !== sessionId).length === 0 ? 'No Users' : 'Users'}</h2>
