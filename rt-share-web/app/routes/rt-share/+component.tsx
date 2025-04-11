@@ -30,7 +30,7 @@ export function RtShare() {
 
         // Initialize WebSocket
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-            const socket = new WebSocket("ws://localhost:3000/");
+            const socket = new WebSocket("ws://139.162.132.136:3000/");
             wsRef.current = socket;
             socket.onopen = () => {
                 console.log("WebSocket connection established");
