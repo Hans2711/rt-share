@@ -18,6 +18,9 @@ export function RtShare() {
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
     const [messages, setMessages] = useState<Record<string, Message[]>>({});
+    const [isOnline, setIsOnline] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
+    const [error, setError] = useState('');
 
     useEffect(() => {
         // Initialize session ID
@@ -30,16 +33,41 @@ export function RtShare() {
 
         // Initialize WebSocket
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-            const socket = new WebSocket("wss://rt-share.diesing.pro:3000/");
+            const socket = new WebSocket("wss://rt-share.diesing.pro:3001/");
             wsRef.current = socket;
+
+            setIsConnecting(true);
+
+            const connectionTimeout = setTimeout(() => {
+                if (socket.readyState !== WebSocket.OPEN) {
+                    setError("Connection timed out.");
+                    setIsConnecting(false);
+
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 3000);
+                }
+            }, 8000);
+
             socket.onopen = () => {
                 console.log("WebSocket connection established");
+                setIsConnecting(false);
+                setIsOnline(true);
                 const msg = {
                     type: "join",
                     payload: storedSessionId,
                 };
                 socket.send(JSON.stringify(msg) + "\n");
             };
+
+            socket.addEventListener("error", (event) => {
+                setError("WebSocket connection error " + event);
+                setIsOnline(false);
+
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            });
 
             socket.onmessage = (event) => {
                 const jEvent = JSON.parse(event.data);
@@ -220,10 +248,16 @@ export function RtShare() {
 
     return (
         <div className="rt-share-container">
-            <h2 class="mb-3">{sessionId}</h2>
+            <h2 className="mb-3 text-center">{sessionId}</h2>
             <div className="rt-share-layout">
                 <div className="user-list">
-                    <h2>{users.filter(user => user.id !== sessionId).length === 0 ? 'No Users' : 'Users'}</h2>
+                    <h2>
+                        {!isOnline
+                            ? "Waiting for Connection"
+                            : users.filter(user => user.id !== sessionId).length === 0
+                                ? "No Users"
+                                : "Users"}
+                    </h2>
                     <ul>
                         {users
                             .filter(user => user.id !== sessionId)
@@ -239,21 +273,28 @@ export function RtShare() {
                     </ul>
                 </div>
                 <div className="chat-area">
-                    {selectedUser ? (
-                        <Chat
-                            currentUser={sessionId}
-                            targetUser={selectedUser}
-                            ws={wsRef.current}
-                            messages={messages[selectedUser] || []}
-                            online={users.some(user => user.id === selectedUser && user.isOnline)}
-                            onSendMessage={(text) => handleSendMessage(selectedUser, text)}
-                            onSendFile={(file) => handleSendFile(selectedUser, file)}
-                        />
-                    ) : (
-                            <div className="no-chat-selected">
-                                <p>Select a user to start chatting</p>
+                    {isConnecting ? (
+                        <div className="loading no-chat-selected">Connecting...</div>
+                    ) : error ? (
+                            <div className="error no-chat-selected">
+                            <p>Error: {error}</p>
                             </div>
-                        )}
+
+                        ) : selectedUser ? (
+                                <Chat
+                                    currentUser={sessionId}
+                                    targetUser={selectedUser}
+                                    ws={wsRef.current}
+                                    messages={messages[selectedUser] || []}
+                                    online={users.some(user => user.id === selectedUser && user.isOnline)}
+                                    onSendMessage={(text) => handleSendMessage(selectedUser, text)}
+                                    onSendFile={(file) => handleSendFile(selectedUser, file)}
+                                />
+                            ) : (
+                                    <div className="no-chat-selected">
+                                        <p>Select a user to start chatting</p>
+                                    </div>
+                                )}
                 </div>
             </div>
         </div>
