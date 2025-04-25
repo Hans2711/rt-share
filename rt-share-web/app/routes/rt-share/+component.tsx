@@ -248,7 +248,6 @@ export function RtShare() {
 
     return (
         <div className="rt-share-container">
-            <h2 className="mb-3 text-center">{sessionId}</h2>
             <div className="rt-share-layout">
                 <div className="user-list">
                     <h2>
@@ -256,7 +255,7 @@ export function RtShare() {
                             ? "Waiting for Connection"
                             : users.filter(user => user.id !== sessionId).length === 0
                                 ? "No Users"
-                                : "Users"}
+                                : "Users (You are " + sessionId + ")"}
                     </h2>
                     <ul>
                         {users

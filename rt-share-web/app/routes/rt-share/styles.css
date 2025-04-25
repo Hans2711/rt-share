@@ -4,15 +4,16 @@
     max-width: 1200px;
     margin: 0 auto;
     height: 100vh;
+    overflow: hidden; /* Prevents scrolling */
 }
 
 .rt-share-layout {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 20px);
+    height: 100%; /* Fill entire screen */
     border: 1px solid #ccc;
     border-radius: 8px;
-    overflow: hidden;
+    overflow: hidden; /* Prevents scrolling */
 }
 
 .user-list {
@@ -28,6 +29,7 @@
     display: flex;
     flex-direction: column;
     min-height: 60vh;
+    overflow-y: auto; /* Allow scrolling within chat area */
 }
 
 /* Message input adjustments for mobile */
@@ -183,6 +185,7 @@
     border-radius: 4px;
     cursor: pointer;
 }
+
 .chat-input .send-file:hover {
     background-color: #45a049;
 }

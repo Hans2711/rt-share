@@ -72,16 +72,16 @@ export function Chat({ currentUser, targetUser, ws, messages, onSendMessage, onS
             </div>
             <div className="chat-input">
                 <div className="input-container">
-                <input
-                    type="text"
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                    placeholder="Type a message..."
-                />
-                <button onClick={handleSendMessage}>Send</button>
-                <label for="file" className="send-file" >Send File</label>
-                <input type="file" name="file" id="file" onChange={handleFileChange} />
+                    <input
+                        type="text"
+                        value={messageInput}
+                        onChange={(e) => setMessageInput(e.target.value)}
+                        onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+                        placeholder="Type a message..."
+                    />
+                    <button onClick={handleSendMessage}>Send</button>
+                    <label for="file" className="send-file" >Send File</label>
+                    <input type="file" name="file" id="file" onChange={handleFileChange} />
                 </div>
             </div>
         </div>
