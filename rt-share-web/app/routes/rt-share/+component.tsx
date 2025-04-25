@@ -33,7 +33,7 @@ export function RtShare() {
 
         // Initialize WebSocket
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-            const socket = new WebSocket("wss://rt-share.diesing.pro:3001/");
+            const socket = new WebSocket("wss://rt-share.diesing.pro:3000/");
             wsRef.current = socket;
 
             setIsConnecting(true);
