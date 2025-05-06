@@ -12,6 +12,8 @@ interface ChatProps {
     online: boolean;
 }
 
+const MAX_FILE_SIZE_MB = 10;
+
 export function Chat({ currentUser, targetUser, ws, messages, onSendMessage, onSendFile }: ChatProps) {
     const [messageInput, setMessageInput] = useState("");
 
@@ -27,6 +29,10 @@ export function Chat({ currentUser, targetUser, ws, messages, onSendMessage, onS
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
+            if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                alert(`File too large. Max allowed is ${MAX_FILE_SIZE_MB}MB.`);
+                return;
+            }
             onSendFile(file);
             e.target.value = ""; // Reset file input
         }
