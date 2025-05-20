@@ -1,12 +1,12 @@
 package server
 
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
-	"golang.org/x/net/websocket"
-	"sync"
-	"time"
+        "crypto/rand"
+        "fmt"
+        "golang.org/x/net/websocket"
+        "math/big"
+        "sync"
+        "time"
 )
 
 type Server struct {
@@ -88,10 +88,16 @@ func WSHandler(s *Server) websocket.Handler {
 	}
 }
 
+var names = []string{"bob", "alice", "peter", "lisa", "pia"}
+
 func generateID() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(b)
+        nameIdx, err := rand.Int(rand.Reader, big.NewInt(int64(len(names))))
+        if err != nil {
+                return fmt.Sprintf("anon-%d", time.Now().UnixNano())
+        }
+        num, err := rand.Int(rand.Reader, big.NewInt(900))
+        if err != nil {
+                return fmt.Sprintf("%s-%d", names[nameIdx.Int64()], time.Now().UnixNano()%1000)
+        }
+        return fmt.Sprintf("%s-%d", names[nameIdx.Int64()], 100+num.Int64())
 }

@@ -8,11 +8,22 @@ import (
 )
 
 func (s *Server) handleJoin(r Request, ws *websocket.Conn) (Response, error) {
-	userID := r.Payload
-	if userID == "" {
-		userID = generateID()
-	}
-	s.addUser(userID, ws)
+        userID := r.Payload
+        if userID != "" {
+                if old, exists := s.getUserConn(userID); exists && old != ws {
+                        s.safeRemoveConnection(old)
+                }
+        }
+        if userID == "" {
+                for {
+                        id := generateID()
+                        if _, exists := s.getUserConn(id); !exists {
+                                userID = id
+                                break
+                        }
+                }
+        }
+        s.addUser(userID, ws)
 
 	fmt.Printf("User %s joined\n", userID)
 

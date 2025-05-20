@@ -73,7 +73,8 @@ export function RtShare() {
 
   useEffect(() => {
     // Initialise WebSocket and request a session ID from server
-    setSessionId("");
+    const storedId = localStorage.getItem("sessionId") || "";
+    setSessionId(storedId);
 
     // Initialise WebSocket
     if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
@@ -95,7 +96,9 @@ export function RtShare() {
         console.log("WebSocket connection established");
         setIsConnecting(false);
         setIsOnline(true);
-        socket.send(JSON.stringify({ type: "join", payload: "" }) + "\n");
+        socket.send(
+          JSON.stringify({ type: "join", payload: storedId }) + "\n",
+        );
       };
 
       socket.addEventListener("error", (event) => {
