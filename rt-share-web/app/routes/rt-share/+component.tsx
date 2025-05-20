@@ -38,6 +38,17 @@ export function RtShare() {
         }
     >>({});
 
+    const cleanupPeerConnections = () => {
+        Object.values(dataChannels.current).forEach(ch => {
+            try { ch.close(); } catch { /* ignore */ }
+        });
+        Object.values(peerConns.current).forEach(pc => {
+            try { pc.close(); } catch { /* ignore */ }
+        });
+        peerConns.current = {};
+        dataChannels.current = {};
+    };
+
     const selectUser = (uid: string) => {
         setSelectedUser(uid);
         createPeerConnection(uid, true);
@@ -108,11 +119,12 @@ export function RtShare() {
             };
 
             return () => {
+                cleanupPeerConnections();
                 if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                     wsRef.current.send(JSON.stringify({ type: "leave", payload: storedSessionId }) + "\n");
                     wsRef.current.close();
-                    wsRef.current = null;
                 }
+                wsRef.current = null;
             };
         }
     }, []);
@@ -204,6 +216,20 @@ export function RtShare() {
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
         });
         peerConns.current[userId] = pc;
+
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+                console.warn("Peer connection dropped", userId);
+                try { pc.close(); } catch {}
+                delete peerConns.current[userId];
+                delete dataChannels.current[userId];
+                setTimeout(() => {
+                    if (!peerConns.current[userId]) {
+                        createPeerConnection(userId, initiator);
+                    }
+                }, 1000);
+            }
+        };
 
         pc.onicecandidate = (e) => {
             if (e.candidate && wsRef.current) {
