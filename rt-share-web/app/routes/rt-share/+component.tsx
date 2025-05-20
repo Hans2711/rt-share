@@ -72,7 +72,9 @@ export function RtShare() {
     const selectUser = (uid: string) => {
         setSelectedUser(uid);
         updatePeerStatus(uid, "connecting");
-        createPeerConnection(uid, true);
+        // Determine the initiator deterministically to avoid offer glare
+        const shouldInitiate = sessionId > uid;
+        createPeerConnection(uid, shouldInitiate);
     };
 
     useEffect(() => {
@@ -262,7 +264,7 @@ export function RtShare() {
         };
     };
 
-    const createPeerConnection = (userId: string, initiator: boolean) => {
+    const createPeerConnection = (userId: string, initiator: boolean = sessionId > userId) => {
         if (peerConns.current[userId]) return;
         setPeerStatuses(prev => ({
             ...prev,
@@ -282,11 +284,13 @@ export function RtShare() {
                 delete peerConns.current[userId];
                 delete dataChannels.current[userId];
                 updatePeerStatus(userId, "reconnecting");
+                // Add jitter so both peers don't reconnect simultaneously
+                const delay = 1000 + Math.floor(Math.random() * 1000);
                 setTimeout(() => {
                     if (!peerConns.current[userId]) {
                         createPeerConnection(userId, initiator);
                     }
-                }, 1000);
+                }, delay);
             }
         };
 
@@ -346,12 +350,21 @@ export function RtShare() {
         if (pc) pc.addIceCandidate(new RTCIceCandidate(JSON.parse(data)));
     };
 
-    const handleSendMessage = (targetUser: string, text: string) => {
-        const channel = dataChannels.current[targetUser];
+    const ensureConnection = (userId: string) => {
+        const channel = dataChannels.current[userId];
         if (!channel || channel.readyState !== "open") {
-            alert("Peer connection not established yet.");
+            createPeerConnection(userId);
+            return false;
+        }
+        return true;
+    };
+
+    const handleSendMessage = (targetUser: string, text: string) => {
+        if (!ensureConnection(targetUser)) {
+            alert("Peer connection not established yet. Reconnecting...");
             return;
         }
+        const channel = dataChannels.current[targetUser]!;
         channel.send(JSON.stringify({ type: "text", text }));
 
         const newMessage: Message = {
@@ -370,11 +383,11 @@ export function RtShare() {
     //  📤  FILE TRANSFER WITH STREAMING + ROBUST BACK-PRESSURE
     // ────────────────────────────────────────────────────────────────────────────
     const sendFileNow = async (targetUser: string, file: File) => {
-        const channel = dataChannels.current[targetUser];
-        if (!channel || channel.readyState !== "open") {
-            alert("Peer connection not established yet.");
+        if (!ensureConnection(targetUser)) {
+            alert("Peer connection not established yet. Reconnecting...");
             return;
         }
+        const channel = dataChannels.current[targetUser]!;
 
         console.debug(`Preparing to send '${file.name}' (${file.size} B)`);
 
@@ -455,14 +468,24 @@ export function RtShare() {
             sendFileNow(targetUser, file);
             return;
         }
-        const channel = dataChannels.current[targetUser];
-        if (!channel || channel.readyState !== "open") {
-            alert("Peer connection not established yet.");
+        if (!ensureConnection(targetUser)) {
+            alert("Peer connection not established yet. Reconnecting...");
             return;
         }
+        const channel = dataChannels.current[targetUser]!;
         pendingFiles.current[targetUser] = file;
         channel.send(JSON.stringify({ type: "file-offer", filename: file.name, size: file.size }));
     };
+
+    useEffect(() => {
+        const onOnline = () => {
+            if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+                window.location.reload();
+            }
+        };
+        window.addEventListener("online", onOnline);
+        return () => window.removeEventListener("online", onOnline);
+    }, []);
 
     return (
         <div className="rt-share-container">
