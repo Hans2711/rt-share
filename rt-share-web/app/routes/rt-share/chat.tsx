@@ -31,6 +31,7 @@ export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendF
                 alert(`File too large. Max allowed is ${MAX_FILE_SIZE_MB}MB.`);
                 return;
             }
+            console.log("Sending File", file);
             onSendFile(file);
             e.target.value = ""; // Reset file input
         }

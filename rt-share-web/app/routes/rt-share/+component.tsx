@@ -23,6 +23,19 @@ export function RtShare() {
     const [isConnecting, setIsConnecting] = useState(false);
     const [error, setError] = useState('');
 
+    const CHUNK_SIZE = 16 * 1024;
+
+    const incomingFiles = useRef<Record<
+    string,                              // sender-ID
+    {
+        [filename: string]: {            // one queue per file
+            size: number;
+            received: number;
+            chunks: ArrayBuffer[];
+        };
+    }
+>>({});
+
     const selectUser = (uid: string) => {
         setSelectedUser(uid);
         createPeerConnection(uid, true);
@@ -39,6 +52,7 @@ export function RtShare() {
 
         // Initialize WebSocket
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+            //const socket = new WebSocket("ws://localhost:3000/");
             const socket = new WebSocket("wss://rt-share.diesing.pro:3000/");
             wsRef.current = socket;
 
@@ -173,24 +187,109 @@ export function RtShare() {
     };
 
     const setupDataChannel = (userId: string, channel: RTCDataChannel) => {
+        channel.binaryType = "arraybuffer";          // important!
         dataChannels.current[userId] = channel;
+
+
         channel.onmessage = (e) => {
-            const data = JSON.parse(e.data);
-            if (data.type === "text") {
-                const newMessage: Message = {
-                    id: Date.now().toString(),
-                    text: data.text,
-                    sender: userId,
-                    timestamp: new Date(),
-                };
-                setMessages(prev => ({
-                    ...prev,
-                    [userId]: [...(prev[userId] || []), newMessage],
-                }));
-            } else if (data.type === "file") {
-                handleFileDownload({ filename: data.filename, bytes: data.bytes, sender: userId });
+            // ───────────────────────────────────────────────────────────
+            // 1.  TEXT MESSAGE?  (string)
+            // ───────────────────────────────────────────────────────────
+            if (typeof e.data === "string") {
+                let msg: any;
+                try {
+                    msg = JSON.parse(e.data);
+                } catch (err) {
+                    console.warn("Discarding non-JSON text frame:", e.data);
+                    return;
+                }
+
+                if (msg.type === "text") {
+                    const newMessage: Message = {
+                        id: Date.now().toString(),
+                        text: msg.text,
+                        sender: userId,
+                        timestamp: new Date(),
+                    };
+                    setMessages((prev) => ({
+                        ...prev,
+                        [userId]: [...(prev[userId] || []), newMessage],
+                    }));
+                } else if (msg.type === "file-meta") {
+                    incomingFiles.current[userId] ??= {};
+                    incomingFiles.current[userId][msg.filename] = {
+                        size: msg.size,
+                        received: 0,
+                        chunks: [],
+                    };
+                    console.debug(
+                        `Started receiving '${msg.filename}' (${msg.size} B) from ${userId}`
+                    );
+                } else if (msg.type === "file-end") {
+                    const fileEntry =
+                        incomingFiles.current[userId]?.[msg.filename];
+                    if (!fileEntry) return;
+
+                    const blob = new Blob(fileEntry.chunks);
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = msg.filename;
+                    a.style.display = "none";
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    console.debug(
+                        `Finished receiving '${msg.filename}' from ${userId}`
+                    );
+
+                    const newMessage: Message = {
+                        id: Date.now().toString(),
+                        text: "",
+                        sender: userId,
+                        timestamp: new Date(),
+                        isFile: true,
+                        filename: msg.filename,
+                    };
+                    setMessages((prev) => ({
+                        ...prev,
+                        [userId]: [...(prev[userId] || []), newMessage],
+                    }));
+
+                    delete incomingFiles.current[userId][msg.filename];
+                }
+                return; // handled text frame
             }
+
+            // ───────────────────────────────────────────────────────────
+            // 2.  BINARY MESSAGE?  (ArrayBuffer or Blob)
+            // ───────────────────────────────────────────────────────────
+            if (e.data instanceof ArrayBuffer || e.data instanceof Blob) {
+                const arrayBuf =
+                    e.data instanceof Blob ? e.data.arrayBuffer() : e.data;
+
+                const userFiles = incomingFiles.current[userId];
+                if (!userFiles) {
+                    console.warn("Binary chunk with no active file transfer");
+                    return;
+                }
+                const current = Object.values(userFiles)[0];
+                if (!current) return;
+
+                current.chunks.push(arrayBuf);
+                current.received += arrayBuf.byteLength;
+                // (Optional: update a progress bar here)
+                return;
+            }
+
+            // ───────────────────────────────────────────────────────────
+            // 3.  UNKNOWN TYPE  – just log it
+            // ───────────────────────────────────────────────────────────
+            console.warn("Unrecognised datachannel frame:", e.data);
         };
+
     };
 
     const createPeerConnection = (userId: string, initiator: boolean) => {
@@ -242,18 +341,18 @@ export function RtShare() {
         pc.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
             return pc.createAnswer();
         }).then(answer => {
-            return pc.setLocalDescription(answer);
-        }).then(() => {
-            if (wsRef.current && pc.localDescription) {
-                wsRef.current.send(
-                    JSON.stringify({
-                        type: "answer",
-                        payload: userId,
-                        text: JSON.stringify(pc.localDescription),
-                    }) + "\n"
-                );
-            }
-        });
+                return pc.setLocalDescription(answer);
+            }).then(() => {
+                if (wsRef.current && pc.localDescription) {
+                    wsRef.current.send(
+                        JSON.stringify({
+                            type: "answer",
+                            payload: userId,
+                            text: JSON.stringify(pc.localDescription),
+                        }) + "\n"
+                    );
+                }
+            });
     };
 
     const handleAnswer = (userId: string, data: string) => {
@@ -292,6 +391,7 @@ export function RtShare() {
         }));
     };
 
+
     const handleSendFile = (targetUser: string, file: File) => {
         const channel = dataChannels.current[targetUser];
         if (!channel || channel.readyState !== "open") {
@@ -299,23 +399,38 @@ export function RtShare() {
             return;
         }
 
+        console.debug(`Preparing to send file '${file.name}' (${file.size} bytes)`);
+
         const reader = new FileReader();
-        reader.onload = function () {
-            const arrayBuffer = reader.result;
-            if (!arrayBuffer) return;
+        reader.onerror = err => {
+            console.error("FileReader error:", err);
+            alert("Failed to read file.");
+        };
 
-            const bytes = Array.from(new Uint8Array(arrayBuffer as ArrayBuffer));
-            const binary = bytes.map((b) => String.fromCharCode(b)).join("");
-            const base64 = btoa(binary);
+        reader.onload = () => {
+            const buffer = reader.result as ArrayBuffer;
+            // 1 — announce the file
+            channel.send(JSON.stringify({
+                type: "file-meta",
+                filename: file.name,
+                size: buffer.byteLength
+            }));
 
-            channel.send(
-                JSON.stringify({
-                    type: "file",
-                    filename: file.name,
-                    bytes: base64,
-                })
-            );
+            // 2 — stream the chunks
+            let offset = 0;
+            while (offset < buffer.byteLength) {
+                const slice = buffer.slice(offset, offset + CHUNK_SIZE);
+                channel.send(slice);          // send raw binary
+                offset += CHUNK_SIZE;
+            }
 
+            // 3 — tell the receiver we’re done
+            channel.send(JSON.stringify({
+                type: "file-end",
+                filename: file.name
+            }));
+
+            // 4 — optimistically add a “sent” entry to the chat UI
             const newMessage: Message = {
                 id: Date.now().toString(),
                 text: "",
@@ -324,11 +439,12 @@ export function RtShare() {
                 isFile: true,
                 filename: file.name,
             };
-            setMessages((prev) => ({
+            setMessages(prev => ({
                 ...prev,
                 [targetUser]: [...(prev[targetUser] || []), newMessage],
             }));
         };
+
         reader.readAsArrayBuffer(file);
     };
 
@@ -362,7 +478,7 @@ export function RtShare() {
                         <div className="loading no-chat-selected">Connecting...</div>
                     ) : error ? (
                             <div className="error no-chat-selected">
-                            <p>Error: {error}</p>
+                                <p>Error: {error}</p>
                             </div>
 
                         ) : selectedUser ? (
