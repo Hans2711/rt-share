@@ -72,7 +72,9 @@ export function RtShare() {
     const selectUser = (uid: string) => {
         setSelectedUser(uid);
         updatePeerStatus(uid, "connecting");
-        createPeerConnection(uid, true);
+        // Determine the initiator deterministically to avoid offer glare
+        const shouldInitiate = sessionId > uid;
+        createPeerConnection(uid, shouldInitiate);
     };
 
     useEffect(() => {
@@ -262,7 +264,7 @@ export function RtShare() {
         };
     };
 
-    const createPeerConnection = (userId: string, initiator: boolean) => {
+    const createPeerConnection = (userId: string, initiator: boolean = sessionId > userId) => {
         if (peerConns.current[userId]) return;
         setPeerStatuses(prev => ({
             ...prev,
@@ -282,11 +284,13 @@ export function RtShare() {
                 delete peerConns.current[userId];
                 delete dataChannels.current[userId];
                 updatePeerStatus(userId, "reconnecting");
+                // Add jitter so both peers don't reconnect simultaneously
+                const delay = 1000 + Math.floor(Math.random() * 1000);
                 setTimeout(() => {
                     if (!peerConns.current[userId]) {
                         createPeerConnection(userId, initiator);
                     }
-                }, 1000);
+                }, delay);
             }
         };
 
