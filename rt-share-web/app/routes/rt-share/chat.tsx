@@ -16,6 +16,7 @@ interface ChatProps {
     onSendFile: (file: File) => void;
     sendInfo?: ProgressInfo;
     receiveInfo?: ProgressInfo;
+    connectionStatus: "connected" | "connecting" | "reconnecting" | "disconnected";
 }
 
 import { formatBytes } from "./helpers";
@@ -28,6 +29,7 @@ export function Chat({
     onSendFile,
     sendInfo = { progress: null },
     receiveInfo = { progress: null },
+    connectionStatus,
 }: ChatProps) {
     const [messageInput, setMessageInput] = useState("");
 
@@ -51,7 +53,18 @@ export function Chat({
 
     return (
         <div className="chat-container">
-            <h2>Chat with {targetUser}</h2>
+            <h2>
+                Chat with {targetUser}
+                <span className={`connection-indicator ${connectionStatus}`}>
+                    {connectionStatus === "connected"
+                        ? "Connected"
+                        : connectionStatus === "reconnecting"
+                        ? "Reconnecting..."
+                        : connectionStatus === "connecting"
+                        ? "Connecting..."
+                        : "Disconnected"}
+                </span>
+            </h2>
             <hr />
             {sendInfo.progress !== null && (
                 <div className="progress-container">

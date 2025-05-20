@@ -88,6 +88,15 @@ body {
     border-bottom: 1px solid #ccc;
 }
 
+.connection-indicator {
+    margin-left: 10px;
+    font-size: 0.9em;
+}
+.connection-indicator.connected { color: #4CAF50; }
+.connection-indicator.connecting,
+.connection-indicator.reconnecting { color: #f39c12; }
+.connection-indicator.disconnected { color: #e74c3c; }
+
 .progress-container {
     padding: 10px;
 }
@@ -317,6 +326,11 @@ body {
   .loading-overlay {
     background-color: rgba(0, 0, 0, 0.7);
   }
+
+  .connection-indicator.connected { color: #81c784; }
+  .connection-indicator.connecting,
+  .connection-indicator.reconnecting { color: #ffb74d; }
+  .connection-indicator.disconnected { color: #e57373; }
 
   .loader {
     border-color: #333;

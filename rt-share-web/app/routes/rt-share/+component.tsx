@@ -6,6 +6,8 @@ import { generateSessionId } from "./helpers";
 
 import "./styles.css";
 
+type PeerStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
+
 export function RtShare() {
     const [sessionId, setSessionId] = useState("");
     const wsRef = useRef<WebSocket | null>(null);
@@ -24,9 +26,15 @@ export function RtShare() {
     const [sendFileInfo, setSendFileInfo] = useState<{ name: string; size: number } | null>(null);
     const [receiveFileInfo, setReceiveFileInfo] = useState<{ name: string; size: number } | null>(null);
 
+    const [peerStatuses, setPeerStatuses] = useState<Record<string, PeerStatus>>({});
+
     const allowedRecipients = useRef<Record<string, boolean>>({});
     const allowedSenders = useRef<Record<string, boolean>>({});
     const pendingFiles = useRef<Record<string, File | null>>({});
+
+    const updatePeerStatus = (id: string, status: PeerStatus) => {
+        setPeerStatuses(prev => ({ ...prev, [id]: status }));
+    };
 
     useEffect(() => {
         selectedUserRef.current = selectedUser;
@@ -58,10 +66,12 @@ export function RtShare() {
         });
         peerConns.current = {};
         dataChannels.current = {};
+        setPeerStatuses({});
     };
 
     const selectUser = (uid: string) => {
         setSelectedUser(uid);
+        updatePeerStatus(uid, "connecting");
         createPeerConnection(uid, true);
     };
 
@@ -143,6 +153,9 @@ export function RtShare() {
     const setupDataChannel = (userId: string, channel: RTCDataChannel) => {
         channel.binaryType = "arraybuffer";
         dataChannels.current[userId] = channel;
+
+        channel.onopen = () => updatePeerStatus(userId, "connected");
+        channel.onclose = () => updatePeerStatus(userId, "reconnecting");
 
         channel.onmessage = (e) => {
             if (selectedUserRef.current !== userId) {
@@ -251,17 +264,24 @@ export function RtShare() {
 
     const createPeerConnection = (userId: string, initiator: boolean) => {
         if (peerConns.current[userId]) return;
+        setPeerStatuses(prev => ({
+            ...prev,
+            [userId]: prev[userId] === "reconnecting" ? "reconnecting" : "connecting",
+        }));
         const pc = new RTCPeerConnection({
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
         });
         peerConns.current[userId] = pc;
 
         pc.onconnectionstatechange = () => {
-            if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+            if (pc.connectionState === "connected") {
+                updatePeerStatus(userId, "connected");
+            } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
                 console.warn("Peer connection dropped", userId);
                 try { pc.close(); } catch {}
                 delete peerConns.current[userId];
                 delete dataChannels.current[userId];
+                updatePeerStatus(userId, "reconnecting");
                 setTimeout(() => {
                     if (!peerConns.current[userId]) {
                         createPeerConnection(userId, initiator);
@@ -466,6 +486,7 @@ export function RtShare() {
                             messages={messages[selectedUser] || []}
                             sendInfo={{ progress: sendProgress, filename: sendFileInfo?.name, size: sendFileInfo?.size }}
                             receiveInfo={{ progress: receiveProgress, filename: receiveFileInfo?.name, size: receiveFileInfo?.size }}
+                            connectionStatus={peerStatuses[selectedUser] || "disconnected"}
                             onSendMessage={text => handleSendMessage(selectedUser, text)}
                             onSendFile={file => handleSendFile(selectedUser, file)}
                         />
