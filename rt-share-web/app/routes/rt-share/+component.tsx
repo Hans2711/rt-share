@@ -2,13 +2,10 @@
 import { useEffect, useState, useRef } from "react";
 import type { User, Message } from "./types";
 import { Chat } from "./chat";
+import { UserList } from "./UserList";
+import { generateSessionId } from "./helpers";
 
 import './styles.css';
-
-
-function generateSessionId() {
-    return Math.floor(10000 + Math.random() * 90000).toString();
-}
 
 export function RtShare() {
     const [sessionId, setSessionId] = useState("");
@@ -22,6 +19,8 @@ export function RtShare() {
     const [isOnline, setIsOnline] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [error, setError] = useState('');
+    const [sendProgress, setSendProgress] = useState<number | null>(null);
+    const [receiveProgress, setReceiveProgress] = useState<number | null>(null);
 
     const CHUNK_SIZE = 16 * 1024;
 
@@ -222,6 +221,7 @@ export function RtShare() {
                         received: 0,
                         chunks: [],
                     };
+                    setReceiveProgress(0);
                     console.debug(
                         `Started receiving '${msg.filename}' (${msg.size} B) from ${userId}`
                     );
@@ -259,6 +259,7 @@ export function RtShare() {
                     }));
 
                     delete incomingFiles.current[userId][msg.filename];
+                    setReceiveProgress(null);
                 }
                 return; // handled text frame
             }
@@ -280,7 +281,7 @@ export function RtShare() {
 
                 current.chunks.push(arrayBuf);
                 current.received += arrayBuf.byteLength;
-                // (Optional: update a progress bar here)
+                setReceiveProgress(Math.floor((current.received / current.size) * 100));
                 return;
             }
 
@@ -418,10 +419,12 @@ export function RtShare() {
 
             // 2 — stream the chunks
             let offset = 0;
+            setSendProgress(0);
             while (offset < buffer.byteLength) {
                 const slice = buffer.slice(offset, offset + CHUNK_SIZE);
                 channel.send(slice);          // send raw binary
                 offset += CHUNK_SIZE;
+                setSendProgress(Math.floor((offset / buffer.byteLength) * 100));
             }
 
             // 3 — tell the receiver we’re done
@@ -429,6 +432,7 @@ export function RtShare() {
                 type: "file-end",
                 filename: file.name
             }));
+            setSendProgress(null);
 
             // 4 — optimistically add a “sent” entry to the chat UI
             const newMessage: Message = {
@@ -451,28 +455,13 @@ export function RtShare() {
     return (
         <div className="rt-share-container">
             <div className="rt-share-layout">
-                <div className="user-list">
-                    <h2>
-                        {!isOnline
-                            ? "Waiting for Connection"
-                            : users.filter(user => user.id !== sessionId).length === 0
-                                ? "No Users"
-                                : "Users (You are " + sessionId + ")"}
-                    </h2>
-                    <ul>
-                        {users
-                            .filter(user => user.id !== sessionId)
-                            .map(user => (
-                                <li
-                                    key={user.id}
-                                    className={`${selectedUser === user.id ? "selected" : ""} ${!user.isOnline ? "offline" : ""}`}
-                                    onClick={() => selectUser(user.id)}
-                                >
-                                    {user.id} {!user.isOnline && "(Offline)"}
-                                </li>
-                            ))}
-                    </ul>
-                </div>
+                <UserList
+                    users={users}
+                    currentUser={sessionId}
+                    selectedUser={selectedUser}
+                    isOnline={isOnline}
+                    onSelect={selectUser}
+                />
                 <div className="chat-area">
                     {isConnecting ? (
                         <div className="loading no-chat-selected">Connecting...</div>
@@ -486,6 +475,8 @@ export function RtShare() {
                                     currentUser={sessionId}
                                     targetUser={selectedUser}
                                     messages={messages[selectedUser] || []}
+                                    sendProgress={sendProgress}
+                                    receiveProgress={receiveProgress}
                                     onSendMessage={(text) => handleSendMessage(selectedUser, text)}
                                     onSendFile={(file) => handleSendFile(selectedUser, file)}
                                 />
