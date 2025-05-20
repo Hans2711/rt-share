@@ -14,12 +14,17 @@ export function RtShare() {
 
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
+    const selectedUserRef = useRef<string | null>(null);
     const [messages, setMessages] = useState<Record<string, Message[]>>({});
     const [isOnline, setIsOnline] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [error, setError] = useState("");
     const [sendProgress, setSendProgress] = useState<number | null>(null);
     const [receiveProgress, setReceiveProgress] = useState<number | null>(null);
+
+    useEffect(() => {
+        selectedUserRef.current = selectedUser;
+    }, [selectedUser]);
 
     // 16 KiB payloads balance throughput and memory
     const CHUNK_SIZE = 16 * 1024;
@@ -134,6 +139,9 @@ export function RtShare() {
         dataChannels.current[userId] = channel;
 
         channel.onmessage = (e) => {
+            if (selectedUserRef.current !== userId) {
+                setSelectedUser(userId);
+            }
             // ─────────── TEXT FRAME ───────────
             if (typeof e.data === "string") {
                 let msg: any;
