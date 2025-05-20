@@ -8,11 +8,11 @@ interface ChatProps {
     messages: Message[];
     onSendMessage: (text: string) => void;
     onSendFile: (file: File) => void;
+    sendProgress?: number | null;
+    receiveProgress?: number | null;
 }
 
-const MAX_FILE_SIZE_MB = 10;
-
-export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendFile }: ChatProps) {
+export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendFile, sendProgress = null, receiveProgress = null }: ChatProps) {
     const [messageInput, setMessageInput] = useState("");
 
     const handleSendMessage = () => {
@@ -27,10 +27,6 @@ export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendF
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-                alert(`File too large. Max allowed is ${MAX_FILE_SIZE_MB}MB.`);
-                return;
-            }
             console.log("Sending File", file);
             onSendFile(file);
             e.target.value = ""; // Reset file input
@@ -41,6 +37,18 @@ export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendF
         <div className="chat-container">
             <h2>Chat with {targetUser}</h2>
             <hr />
+            {sendProgress !== null && (
+                <div className="progress-container">
+                    <div>Sending file… {sendProgress}%</div>
+                    <progress value={sendProgress} max={100}></progress>
+                </div>
+            )}
+            {receiveProgress !== null && (
+                <div className="progress-container">
+                    <div>Receiving file… {receiveProgress}%</div>
+                    <progress value={receiveProgress} max={100}></progress>
+                </div>
+            )}
             <div className="messages">
                 {messages.map((message) => (
                     <div

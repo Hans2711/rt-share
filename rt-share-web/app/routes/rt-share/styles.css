@@ -88,6 +88,14 @@ body {
     border-bottom: 1px solid #ccc;
 }
 
+.progress-container {
+    padding: 10px;
+}
+
+.progress-container progress {
+    width: 100%;
+}
+
 .messages {
     flex: 1;
     padding: 15px;
@@ -300,6 +308,10 @@ body {
   .chat-input button:hover,
   .chat-input .send-file:hover {
     background-color: #2e7d32;
+  }
+
+  .progress-container progress {
+    background-color: #2a2a2a;
   }
 
   .loading-overlay {
