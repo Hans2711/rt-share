@@ -3,83 +3,101 @@ import { useState } from "react";
 import type { Message } from "./types";
 
 interface ChatProps {
-    currentUser: string;
-    targetUser: string;
-    messages: Message[];
-    onSendMessage: (text: string) => void;
-    onSendFile: (file: File) => void;
-    sendProgress?: number | null;
-    receiveProgress?: number | null;
+  currentUser: string;
+  targetUser: string;
+  messages: Message[];
+  onSendMessage: (text: string) => void;
+  onSendFile: (file: File) => void;
+  sendProgress?: number | null;
+  receiveProgress?: number | null;
+  status?: string | null;
 }
 
-export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendFile, sendProgress = null, receiveProgress = null }: ChatProps) {
-    const [messageInput, setMessageInput] = useState("");
+export function Chat({
+  currentUser,
+  targetUser,
+  messages,
+  onSendMessage,
+  onSendFile,
+  sendProgress = null,
+  receiveProgress = null,
+  status = null,
+}: ChatProps) {
+  const [messageInput, setMessageInput] = useState("");
 
-    const handleSendMessage = () => {
-        const text = messageInput.trim();
-        if (text) {
-            console.log(text);
-            onSendMessage(text);
-            setMessageInput("");
-        }
-    };
+  const handleSendMessage = () => {
+    const text = messageInput.trim();
+    if (text) {
+      console.log(text);
+      onSendMessage(text);
+      setMessageInput("");
+    }
+  };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            console.log("Sending File", file);
-            onSendFile(file);
-            e.target.value = ""; // Reset file input
-        }
-    };
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      console.log("Sending File", file);
+      onSendFile(file);
+      e.target.value = ""; // Reset file input
+    }
+  };
 
-    return (
-        <div className="chat-container">
-            <h2>Chat with {targetUser}</h2>
-            <hr />
-            {sendProgress !== null && (
-                <div className="progress-container">
-                    <div>Sending file… {sendProgress}%</div>
-                    <progress value={sendProgress} max={100}></progress>
-                </div>
-            )}
-            {receiveProgress !== null && (
-                <div className="progress-container">
-                    <div>Receiving file… {receiveProgress}%</div>
-                    <progress value={receiveProgress} max={100}></progress>
-                </div>
-            )}
-            <div className="messages">
-                {messages.map((message) => (
-                    <div
-                        key={message.id}
-                        className={`message ${message.sender === currentUser ? "sent" : "received"}`}
-                    >
-                        <div className="message-sender">
-                            {message.sender === currentUser ? "You" : message.sender}
-                        </div>
-                        {message.isFile ? (
-                            <div className="file-message">{message.filename}</div>
-                        ) : (
-                            <div className="text-message">{message.text}</div>
-                        )}
-                    </div>
-                ))}
-            </div>
-            <div className="chat-input">
-                <div className="input-container">
-                    <input
-                        type="text"
-                        value={messageInput}
-                        onChange={(e) => setMessageInput(e.target.value)}
-                        onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                        placeholder="Type a message..."
-                    />
-                    <button onClick={handleSendMessage}>Send</button>
-                    <label htmlFor="file" className="send-file" >Send File</label>
-                    <input type="file" name="file" id="file" onChange={handleFileChange} />
-                </div>
-            </div>
+  return (
+    <div className="chat-container">
+      <h2>Chat with {targetUser}</h2>
+      <hr />
+      {status && <div className="progress-container">{status}</div>}
+      {sendProgress !== null && (
+        <div className="progress-container">
+          <div>Sending file… {sendProgress}%</div>
+          <progress value={sendProgress} max={100}></progress>
         </div>
-    );
+      )}
+      {receiveProgress !== null && (
+        <div className="progress-container">
+          <div>Receiving file… {receiveProgress}%</div>
+          <progress value={receiveProgress} max={100}></progress>
+        </div>
+      )}
+      <div className="messages">
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`message ${message.sender === currentUser ? "sent" : "received"}`}
+          >
+            <div className="message-sender">
+              {message.sender === currentUser ? "You" : message.sender}
+            </div>
+            {message.isFile ? (
+              <div className="file-message">{message.filename}</div>
+            ) : (
+              <div className="text-message">{message.text}</div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="chat-input">
+        <div className="input-container">
+          <input
+            type="text"
+            value={messageInput}
+            onChange={(e) => setMessageInput(e.target.value)}
+            onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+            placeholder="Type a message..."
+          />
+          <button onClick={handleSendMessage}>Send</button>
+          <label htmlFor="file" className="send-file">
+            Send File
+          </label>
+          <input
+            type="file"
+            name="file"
+            id="file"
+            onChange={handleFileChange}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }

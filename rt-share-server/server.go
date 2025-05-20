@@ -1,11 +1,11 @@
 package main
 
 import (
+	"crypto/tls"
 	"diesiws/server"
 	"log"
 	"net/http"
 	"time"
-	"crypto/tls"
 )
 
 func main() {

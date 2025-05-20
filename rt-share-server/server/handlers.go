@@ -9,9 +9,12 @@ import (
 
 func (s *Server) handleJoin(r Request, ws *websocket.Conn) (Response, error) {
 	userID := r.Payload
+	if userID == "" {
+		userID = generateID()
+	}
 	s.addUser(userID, ws)
 
-	fmt.Println("User %s joined", userID)
+	fmt.Printf("User %s joined\n", userID)
 
 	s.broadcastResponse(Response{
 		Type:    r.Type,
@@ -25,6 +28,7 @@ func (s *Server) handleJoin(r Request, ws *websocket.Conn) (Response, error) {
 		Status:  "ok",
 		Message: fmt.Sprintf("User %s joined", userID),
 		Data:    s.getAllUserIDsJSON(),
+		Sender:  userID,
 	}, nil
 }
 
@@ -97,163 +101,6 @@ func (s *Server) handleSendText(r Request, ws *websocket.Conn) (Response, error)
 	}, nil
 }
 
-func (s *Server) handleSendFile(r Request, ws *websocket.Conn) (Response, error) {
-	userID := r.Payload
-	filename := r.Filename
-	bytes := r.Bytes
-
-	conn, exists := s.getUserConn(userID)
-	if !exists {
-		return Response{
-			Type:    r.Type,
-			Status:  "error",
-			Message: "User not found",
-		}, nil
-	}
-
-	senderUid := s.getSenderUID(ws)
-	receiverUid := s.getAllowedSend(senderUid)
-
-	msgFinalSend := Response{
-		Type:     r.Type,
-		Status:   "dataSend",
-		Filename: filename,
-		Bytes:    bytes,
-		Sender:   senderUid,
-		Message:  fmt.Sprintf("File %s sent", filename),
-	}
-
-	if receiverUid == "" {
-		msg := Response{
-			Type:     r.Type,
-			Status:   "requestSendFile",
-			Filename: filename,
-			Data:     senderUid,
-			Message:  fmt.Sprintf("Request send file %s sent", filename),
-		}
-
-		jsonBytes, _ := msg.toJson()
-		jsonBytes = append(jsonBytes, '\n')
-
-		if _, err := conn.Write(jsonBytes); err != nil {
-			s.removeConnection(conn)
-			return Response{
-				Type:    r.Type,
-				Status:  "error",
-				Message: "Failed to send request",
-			}, nil
-		}
-
-		q := SendQueue{
-			response: msgFinalSend,
-			sender:   ws,
-			receiver: conn,
-		}
-		s.sendQueue[userID] = &q
-
-		return Response{
-			Type:    r.Type,
-			Status:  "ok",
-			Message: fmt.Sprintf("File %s request sent %s", filename, userID),
-		}, nil
-	}
-
-	jsonBytes, _ := msgFinalSend.toJson()
-	jsonBytes = append(jsonBytes, '\n')
-
-	if _, err := conn.Write(jsonBytes); err != nil {
-		s.removeConnection(conn)
-		return Response{
-			Type:    r.Type,
-			Status:  "error",
-			Message: "Failed to send file to user",
-		}, nil
-	}
-
-	return Response{
-		Type:    r.Type,
-		Status:  "ok",
-		Message: fmt.Sprintf("File %s sent to user %s", filename, userID),
-	}, nil
-}
-
-func (s *Server) handleAcceptFile(r Request, ws *websocket.Conn) (Response, error) {
-	userID := r.Payload
-	var senderConn *websocket.Conn
-	var receiverUid string
-
-	for id, conn := range s.users {
-		if ws == conn {
-			receiverUid = id
-		}
-		if id == userID {
-			senderConn = conn
-		}
-	}
-
-	if receiverUid == "" {
-		return Response{
-			Type:    r.Type,
-			Status:  "error",
-			Message: "Failed to get Receiver in users",
-		}, nil
-	}
-
-	s.setAllowedSend(userID, receiverUid) // Use the synchronized setter
-
-	for userIDKey, sendQueue := range s.sendQueue {
-		if sendQueue.receiver == ws && sendQueue.sender == senderConn {
-			response := sendQueue.response
-			delete(s.sendQueue, userIDKey)
-			return response, nil
-		}
-	}
-
-	return Response{
-		Type:    r.Type,
-		Status:  "ok",
-		Message: fmt.Sprintf("Accpeted from user %s", userID),
-	}, nil
-}
-
-func (s *Server) handleDenyFile(r Request, ws *websocket.Conn) (Response, error) {
-	userID := r.Payload
-	receiverUid := ""
-
-	for id, conn := range s.users {
-		if ws == conn {
-			receiverUid = id
-		}
-	}
-
-	if receiverUid == "" {
-		return Response{
-			Type:    r.Type,
-			Status:  "error",
-			Message: "Receiver not found",
-		}, nil
-	}
-
-	s.clearAllowedSend(userID)
-
-	for _, sendQueue := range s.sendQueue {
-		if sendQueue.receiver == ws {
-			delete(s.sendQueue, userID)
-			return Response{
-				Type:    r.Type,
-				Status:  "ok",
-				Message: fmt.Sprintf("File request for %s denied", userID),
-			}, nil
-		}
-	}
-
-	return Response{
-		Type:    r.Type,
-		Status:  "error",
-		Message: "No pending file request",
-	}, nil
-}
-
 func (s *Server) handleForward(r Request, ws *websocket.Conn) (Response, error) {
 	targetID := r.Payload
 	conn, exists := s.getUserConn(targetID)
@@ -295,12 +142,6 @@ func (s *Server) handleMessage(r Request, ws *websocket.Conn) (Response, error) 
 		return s.handleLeave(r, ws)
 	case "sendText":
 		return s.handleSendText(r, ws)
-	case "sendFile":
-		return s.handleSendFile(r, ws)
-	case "acceptFile":
-		return s.handleAcceptFile(r, ws)
-	case "denyFile":
-		return s.handleDenyFile(r, ws)
 	case "offer":
 		return s.handleForward(r, ws)
 	case "answer":

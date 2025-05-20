@@ -8,10 +8,16 @@ interface UserListProps {
   onSelect: (id: string) => void;
 }
 
-export function UserList({ users, currentUser, selectedUser, isOnline, onSelect }: UserListProps) {
+export function UserList({
+  users,
+  currentUser,
+  selectedUser,
+  isOnline,
+  onSelect,
+}: UserListProps) {
   const heading = !isOnline
     ? "Waiting for Connection"
-    : users.filter(u => u.id !== currentUser).length === 0
+    : users.filter((u) => u.id !== currentUser).length === 0
       ? "No Users"
       : `Users (You are ${currentUser})`;
 
@@ -20,8 +26,8 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect 
       <h2>{heading}</h2>
       <ul>
         {users
-          .filter(u => u.id !== currentUser)
-          .map(u => (
+          .filter((u) => u.id !== currentUser)
+          .map((u) => (
             <li
               key={u.id}
               className={`${selectedUser === u.id ? "selected" : ""} ${!u.isOnline ? "offline" : ""}`}
