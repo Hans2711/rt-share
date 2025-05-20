@@ -2,17 +2,33 @@
 import { useState } from "react";
 import type { Message } from "./types";
 
+interface ProgressInfo {
+    progress: number | null;
+    filename?: string;
+    size?: number;
+}
+
 interface ChatProps {
     currentUser: string;
     targetUser: string;
     messages: Message[];
     onSendMessage: (text: string) => void;
     onSendFile: (file: File) => void;
-    sendProgress?: number | null;
-    receiveProgress?: number | null;
+    sendInfo?: ProgressInfo;
+    receiveInfo?: ProgressInfo;
 }
 
-export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendFile, sendProgress = null, receiveProgress = null }: ChatProps) {
+import { formatBytes } from "./helpers";
+
+export function Chat({
+    currentUser,
+    targetUser,
+    messages,
+    onSendMessage,
+    onSendFile,
+    sendInfo = { progress: null },
+    receiveInfo = { progress: null },
+}: ChatProps) {
     const [messageInput, setMessageInput] = useState("");
 
     const handleSendMessage = () => {
@@ -37,16 +53,20 @@ export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendF
         <div className="chat-container">
             <h2>Chat with {targetUser}</h2>
             <hr />
-            {sendProgress !== null && (
+            {sendInfo.progress !== null && (
                 <div className="progress-container">
-                    <div>Sending file… {sendProgress}%</div>
-                    <progress value={sendProgress} max={100}></progress>
+                    <div>
+                        Sending {sendInfo.filename} ({sendInfo.size ? formatBytes(sendInfo.size) : ""})… {sendInfo.progress}%
+                    </div>
+                    <progress value={sendInfo.progress ?? 0} max={100}></progress>
                 </div>
             )}
-            {receiveProgress !== null && (
+            {receiveInfo.progress !== null && (
                 <div className="progress-container">
-                    <div>Receiving file… {receiveProgress}%</div>
-                    <progress value={receiveProgress} max={100}></progress>
+                    <div>
+                        Receiving {receiveInfo.filename} ({receiveInfo.size ? formatBytes(receiveInfo.size) : ""})… {receiveInfo.progress}%
+                    </div>
+                    <progress value={receiveInfo.progress ?? 0} max={100}></progress>
                 </div>
             )}
             <div className="messages">

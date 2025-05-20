@@ -21,6 +21,12 @@ export function RtShare() {
     const [error, setError] = useState("");
     const [sendProgress, setSendProgress] = useState<number | null>(null);
     const [receiveProgress, setReceiveProgress] = useState<number | null>(null);
+    const [sendFileInfo, setSendFileInfo] = useState<{ name: string; size: number } | null>(null);
+    const [receiveFileInfo, setReceiveFileInfo] = useState<{ name: string; size: number } | null>(null);
+
+    const allowedRecipients = useRef<Record<string, boolean>>({});
+    const allowedSenders = useRef<Record<string, boolean>>({});
+    const pendingFiles = useRef<Record<string, File | null>>({});
 
     useEffect(() => {
         selectedUserRef.current = selectedUser;
@@ -158,6 +164,19 @@ export function RtShare() {
                         ...prev,
                         [userId]: [...(prev[userId] || []), newMessage],
                     }));
+                } else if (msg.type === "file-offer") {
+                    if (allowedSenders.current[userId]) {
+                        channel.send(JSON.stringify({ type: "file-accept" }));
+                    } else {
+                        const ok = window.confirm(`Accept '${msg.filename}' (${msg.size} B) from ${userId}?`);
+                        if (ok) {
+                            allowedSenders.current[userId] = true;
+                            channel.send(JSON.stringify({ type: "file-accept" }));
+                        } else {
+                            channel.send(JSON.stringify({ type: "file-deny" }));
+                            return;
+                        }
+                    }
                 } else if (msg.type === "file-meta") {
                     incomingFiles.current[userId] ??= {};
                     incomingFiles.current[userId][msg.filename] = {
@@ -165,7 +184,18 @@ export function RtShare() {
                         received: 0,
                         chunks: [],
                     };
+                    setReceiveFileInfo({ name: msg.filename, size: msg.size });
                     setReceiveProgress(0);
+                } else if (msg.type === "file-accept") {
+                    allowedRecipients.current[userId] = true;
+                    const pending = pendingFiles.current[userId];
+                    if (pending) {
+                        pendingFiles.current[userId] = null;
+                        sendFileNow(userId, pending);
+                    }
+                } else if (msg.type === "file-deny") {
+                    pendingFiles.current[userId] = null;
+                    alert(`${userId} rejected the file transfer.`);
                 } else if (msg.type === "file-end") {
                     const entry = incomingFiles.current[userId]?.[msg.filename];
                     if (!entry) return;
@@ -196,6 +226,7 @@ export function RtShare() {
 
                     delete incomingFiles.current[userId][msg.filename];
                     setReceiveProgress(null);
+                    setReceiveFileInfo(null);
                 }
                 return;
             }
@@ -318,7 +349,7 @@ export function RtShare() {
     // ────────────────────────────────────────────────────────────────────────────
     //  📤  FILE TRANSFER WITH STREAMING + ROBUST BACK-PRESSURE
     // ────────────────────────────────────────────────────────────────────────────
-    const handleSendFile = async (targetUser: string, file: File) => {
+    const sendFileNow = async (targetUser: string, file: File) => {
         const channel = dataChannels.current[targetUser];
         if (!channel || channel.readyState !== "open") {
             alert("Peer connection not established yet.");
@@ -345,6 +376,7 @@ export function RtShare() {
 
         // 1 — announce the file
         channel.send(JSON.stringify({ type: "file-meta", filename: file.name, size: file.size }));
+        setSendFileInfo({ name: file.name, size: file.size });
 
         // 2 — stream and throttle
         let sent = 0;
@@ -381,6 +413,7 @@ export function RtShare() {
         // 3 — finish
         channel.send(JSON.stringify({ type: "file-end", filename: file.name }));
         setSendProgress(null);
+        setSendFileInfo(null);
 
         // 4 — optimistic chat entry
         const newMessage: Message = {
@@ -395,6 +428,20 @@ export function RtShare() {
             ...prev,
             [targetUser]: [...(prev[targetUser] || []), newMessage],
         }));
+    };
+
+    const handleSendFile = (targetUser: string, file: File) => {
+        if (allowedRecipients.current[targetUser]) {
+            sendFileNow(targetUser, file);
+            return;
+        }
+        const channel = dataChannels.current[targetUser];
+        if (!channel || channel.readyState !== "open") {
+            alert("Peer connection not established yet.");
+            return;
+        }
+        pendingFiles.current[targetUser] = file;
+        channel.send(JSON.stringify({ type: "file-offer", filename: file.name, size: file.size }));
     };
 
     return (
@@ -417,8 +464,8 @@ export function RtShare() {
                             currentUser={sessionId}
                             targetUser={selectedUser}
                             messages={messages[selectedUser] || []}
-                            sendProgress={sendProgress}
-                            receiveProgress={receiveProgress}
+                            sendInfo={{ progress: sendProgress, filename: sendFileInfo?.name, size: sendFileInfo?.size }}
+                            receiveInfo={{ progress: receiveProgress, filename: receiveFileInfo?.name, size: receiveFileInfo?.size }}
                             onSendMessage={text => handleSendMessage(selectedUser, text)}
                             onSendFile={file => handleSendFile(selectedUser, file)}
                         />
