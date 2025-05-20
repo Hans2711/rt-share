@@ -122,6 +122,11 @@ export function RtShare() {
                 if (jEvent.type === "join" && jEvent.status === "ok") {
                     const userList: string[] = JSON.parse(jEvent.data);
                     setUsers(userList.map(id => ({ id, isOnline: true })));
+                    userList.forEach(uid => {
+                        if (uid !== storedSessionId) {
+                            createPeerConnection(uid, storedSessionId > uid);
+                        }
+                    });
                 } else if (jEvent.type === "join" && jEvent.status === "userJoin") {
                     const userID = jEvent.data;
                     setUsers(prev =>
@@ -129,6 +134,9 @@ export function RtShare() {
                             ? prev.map(u => u.id === userID ? { ...u, isOnline: true } : u)
                             : [...prev, { id: userID, isOnline: true }]
                     );
+                    if (userID !== storedSessionId) {
+                        createPeerConnection(userID, storedSessionId > userID);
+                    }
                 } else if (jEvent.type === "leave" && jEvent.status === "userLeft") {
                     const userID = jEvent.data;
                     setUsers(prev => prev.map(u => u.id === userID ? { ...u, isOnline: false } : u));
@@ -157,7 +165,21 @@ export function RtShare() {
         dataChannels.current[userId] = channel;
 
         channel.onopen = () => updatePeerStatus(userId, "connected");
-        channel.onclose = () => updatePeerStatus(userId, "reconnecting");
+        channel.onclose = () => {
+            updatePeerStatus(userId, "reconnecting");
+            delete dataChannels.current[userId];
+            try {
+                const pc = peerConns.current[userId];
+                if (pc) pc.close();
+            } catch {}
+            delete peerConns.current[userId];
+            const delay = 500 + Math.floor(Math.random() * 500);
+            setTimeout(() => {
+                if (!peerConns.current[userId]) {
+                    createPeerConnection(userId);
+                }
+            }, delay);
+        };
 
         channel.onmessage = (e) => {
             if (selectedUserRef.current !== userId) {
