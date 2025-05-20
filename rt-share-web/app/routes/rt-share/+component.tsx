@@ -2,7 +2,6 @@
 import { useEffect, useState, useRef } from "react";
 import type { User, Message } from "./types";
 import { Chat } from "./chat";
-import type { Message } from "./chat";
 
 import './styles.css';
 
@@ -14,6 +13,8 @@ function generateSessionId() {
 export function RtShare() {
     const [sessionId, setSessionId] = useState("");
     const wsRef = useRef<WebSocket | null>(null); // Change from useState to useRef
+    const peerConns = useRef<Record<string, RTCPeerConnection>>({});
+    const dataChannels = useRef<Record<string, RTCDataChannel>>({});
 
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -21,6 +22,11 @@ export function RtShare() {
     const [isOnline, setIsOnline] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [error, setError] = useState('');
+
+    const selectUser = (uid: string) => {
+        setSelectedUser(uid);
+        createPeerConnection(uid, true);
+    };
 
     useEffect(() => {
         // Initialize session ID
@@ -98,33 +104,14 @@ export function RtShare() {
                         )
                     );
                 } 
-                else if (jEvent.type === "sendText" && jEvent.status === "dataSend") {
-                    const newMessage: Message = {
-                        id: Date.now().toString(),
-                        text: jEvent.data,
-                        sender: jEvent.sender,
-                        timestamp: new Date(),
-                    };
-                    setMessages(prev => ({
-                        ...prev,
-                        [jEvent.sender]: [...(prev[jEvent.sender] || []), newMessage],
-                    }));
-                } 
-                else if (jEvent.type === "sendFile" && jEvent.status === "requestSendFile") {
-                    if (confirm(`Accept File ${jEvent.filename} from ${jEvent.data}`)) {
-                        socket.send(JSON.stringify({
-                            type: "acceptFile",
-                            payload: jEvent.data,
-                        }) + "\n");
-                    } else {
-                        socket.send(JSON.stringify({
-                            type: "denyFile",
-                            payload: jEvent.data,
-                        }) + "\n");
-                    }
-                } 
-                else if (jEvent.type === "sendFile" && jEvent.status === "dataSend") {
-                    handleFileDownload(jEvent);
+                else if (jEvent.type === "offer") {
+                    handleOffer(jEvent.sender, jEvent.data);
+                }
+                else if (jEvent.type === "answer") {
+                    handleAnswer(jEvent.sender, jEvent.data);
+                }
+                else if (jEvent.type === "candidate") {
+                    handleCandidate(jEvent.sender, jEvent.data);
                 }
             };
 
@@ -185,18 +172,112 @@ export function RtShare() {
         }
     };
 
-    const handleSendMessage = (targetUser: string, text: string) => {
-        if (!wsRef.current) return;
-
-        console.log(text);
-        console.log(targetUser);
-
-        const msg = {
-            type: "sendText",
-            payload: targetUser,
-            text: text,
+    const setupDataChannel = (userId: string, channel: RTCDataChannel) => {
+        dataChannels.current[userId] = channel;
+        channel.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            if (data.type === "text") {
+                const newMessage: Message = {
+                    id: Date.now().toString(),
+                    text: data.text,
+                    sender: userId,
+                    timestamp: new Date(),
+                };
+                setMessages(prev => ({
+                    ...prev,
+                    [userId]: [...(prev[userId] || []), newMessage],
+                }));
+            } else if (data.type === "file") {
+                handleFileDownload({ filename: data.filename, bytes: data.bytes, sender: userId });
+            }
         };
-        wsRef.current.send(JSON.stringify(msg) + "\n");
+    };
+
+    const createPeerConnection = (userId: string, initiator: boolean) => {
+        if (peerConns.current[userId]) return;
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
+        peerConns.current[userId] = pc;
+
+        pc.onicecandidate = (e) => {
+            if (e.candidate && wsRef.current) {
+                wsRef.current.send(
+                    JSON.stringify({
+                        type: "candidate",
+                        payload: userId,
+                        text: JSON.stringify(e.candidate),
+                    }) + "\n"
+                );
+            }
+        };
+
+        pc.ondatachannel = (e) => {
+            setupDataChannel(userId, e.channel);
+        };
+
+        if (initiator) {
+            const channel = pc.createDataChannel("chat");
+            setupDataChannel(userId, channel);
+            pc.createOffer()
+                .then((offer) => pc.setLocalDescription(offer))
+                .then(() => {
+                    if (wsRef.current && pc.localDescription) {
+                        wsRef.current.send(
+                            JSON.stringify({
+                                type: "offer",
+                                payload: userId,
+                                text: JSON.stringify(pc.localDescription),
+                            }) + "\n"
+                        );
+                    }
+                });
+        }
+    };
+
+    const handleOffer = (userId: string, data: string) => {
+        createPeerConnection(userId, false);
+        const pc = peerConns.current[userId];
+        const offer = JSON.parse(data);
+        pc.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
+            return pc.createAnswer();
+        }).then(answer => {
+            return pc.setLocalDescription(answer);
+        }).then(() => {
+            if (wsRef.current && pc.localDescription) {
+                wsRef.current.send(
+                    JSON.stringify({
+                        type: "answer",
+                        payload: userId,
+                        text: JSON.stringify(pc.localDescription),
+                    }) + "\n"
+                );
+            }
+        });
+    };
+
+    const handleAnswer = (userId: string, data: string) => {
+        const pc = peerConns.current[userId];
+        if (!pc) return;
+        const answer = JSON.parse(data);
+        pc.setRemoteDescription(new RTCSessionDescription(answer));
+    };
+
+    const handleCandidate = (userId: string, data: string) => {
+        const pc = peerConns.current[userId];
+        if (!pc) return;
+        const candidate = JSON.parse(data);
+        pc.addIceCandidate(new RTCIceCandidate(candidate));
+    };
+
+    const handleSendMessage = (targetUser: string, text: string) => {
+        const channel = dataChannels.current[targetUser];
+        if (!channel || channel.readyState !== "open") {
+            alert("Peer connection not established yet.");
+            return;
+        }
+
+        channel.send(JSON.stringify({ type: "text", text }));
 
         // Add message to local state
         const newMessage: Message = {
@@ -212,7 +293,11 @@ export function RtShare() {
     };
 
     const handleSendFile = (targetUser: string, file: File) => {
-        if (!wsRef.current) return;
+        const channel = dataChannels.current[targetUser];
+        if (!channel || channel.readyState !== "open") {
+            alert("Peer connection not established yet.");
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = function () {
@@ -220,16 +305,17 @@ export function RtShare() {
             if (!arrayBuffer) return;
 
             const bytes = Array.from(new Uint8Array(arrayBuffer as ArrayBuffer));
+            const binary = bytes.map((b) => String.fromCharCode(b)).join("");
+            const base64 = btoa(binary);
 
-            const msg = {
-                type: "sendFile",
-                payload: targetUser,
-                filename: file.name,
-                bytes: bytes,
-            };
-            wsRef.current.send(JSON.stringify(msg) + "\n");
+            channel.send(
+                JSON.stringify({
+                    type: "file",
+                    filename: file.name,
+                    bytes: base64,
+                })
+            );
 
-            // Add file message to local state
             const newMessage: Message = {
                 id: Date.now().toString(),
                 text: "",
@@ -264,7 +350,7 @@ export function RtShare() {
                                 <li
                                     key={user.id}
                                     className={`${selectedUser === user.id ? "selected" : ""} ${!user.isOnline ? "offline" : ""}`}
-                                    onClick={() => setSelectedUser(user.id)}
+                                    onClick={() => selectUser(user.id)}
                                 >
                                     {user.id} {!user.isOnline && "(Offline)"}
                                 </li>
@@ -283,9 +369,7 @@ export function RtShare() {
                                 <Chat
                                     currentUser={sessionId}
                                     targetUser={selectedUser}
-                                    ws={wsRef.current}
                                     messages={messages[selectedUser] || []}
-                                    online={users.some(user => user.id === selectedUser && user.isOnline)}
                                     onSendMessage={(text) => handleSendMessage(selectedUser, text)}
                                     onSendFile={(file) => handleSendFile(selectedUser, file)}
                                 />
