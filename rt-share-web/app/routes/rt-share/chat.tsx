@@ -1,20 +1,18 @@
 // src/routes/rt-share/chat.tsx
 import { useState } from "react";
-import type { User, Message } from "./types";
+import type { Message } from "./types";
 
 interface ChatProps {
     currentUser: string;
     targetUser: string;
-    ws: WebSocket | null;
     messages: Message[];
     onSendMessage: (text: string) => void;
     onSendFile: (file: File) => void;
-    online: boolean;
 }
 
 const MAX_FILE_SIZE_MB = 10;
 
-export function Chat({ currentUser, targetUser, ws, messages, onSendMessage, onSendFile }: ChatProps) {
+export function Chat({ currentUser, targetUser, messages, onSendMessage, onSendFile }: ChatProps) {
     const [messageInput, setMessageInput] = useState("");
 
     const handleSendMessage = () => {
@@ -52,27 +50,10 @@ export function Chat({ currentUser, targetUser, ws, messages, onSendMessage, onS
                             {message.sender === currentUser ? "You" : message.sender}
                         </div>
                         {message.isFile ? (
-                            <div className="file-message">
-                                <a 
-                                    href="#" 
-                                    onClick={(e) => {
-                                        e.preventDefault();
-                                        // Handle file download
-                                        if (ws) {
-                                            const msg = {
-                                                type: "acceptFile",
-                                                payload: message.sender,
-                                            };
-                                            ws.send(JSON.stringify(msg) + "\n");
-                                        }
-                                    }}
-                                >
-                                    {message.filename}
-                                </a>
-                            </div>
+                            <div className="file-message">{message.filename}</div>
                         ) : (
-                                <div className="text-message">{message.text}</div>
-                            )}
+                            <div className="text-message">{message.text}</div>
+                        )}
                     </div>
                 ))}
             </div>
@@ -86,7 +67,7 @@ export function Chat({ currentUser, targetUser, ws, messages, onSendMessage, onS
                         placeholder="Type a message..."
                     />
                     <button onClick={handleSendMessage}>Send</button>
-                    <label for="file" className="send-file" >Send File</label>
+                    <label htmlFor="file" className="send-file" >Send File</label>
                     <input type="file" name="file" id="file" onChange={handleFileChange} />
                 </div>
             </div>
