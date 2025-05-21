@@ -13,6 +13,7 @@ export function RtShare() {
     const wsRef = useRef<WebSocket | null>(null);
     const peerConns = useRef<Record<string, RTCPeerConnection>>({});
     const dataChannels = useRef<Record<string, RTCDataChannel>>({});
+    const p2pFailCount = useRef<number>(0);
 
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -328,6 +329,11 @@ export function RtShare() {
             if (pc.connectionState === "connected") {
                 updatePeerStatus(userId, "connected");
             } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+                p2pFailCount.current += 1;
+                if (p2pFailCount.current >= 10) {
+                    window.location.reload();
+                    return;
+                }
                 console.warn("Peer connection dropped", userId);
                 try { pc.close(); } catch {}
                 delete peerConns.current[userId];
