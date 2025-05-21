@@ -43,6 +43,33 @@ export function RtShare() {
     // 16 KiB payloads balance throughput and memory
     const CHUNK_SIZE = 16 * 1024;
 
+    // Periodically check each peer connection's state
+    useEffect(() => {
+        const interval = setInterval(() => {
+            Object.entries(peerConns.current).forEach(([uid, pc]) => {
+                let status: PeerStatus = "connecting";
+                switch (pc.connectionState) {
+                    case "connected":
+                        status = "connected";
+                        break;
+                    case "disconnected":
+                    case "failed":
+                        status = "reconnecting";
+                        break;
+                    case "new":
+                    case "connecting":
+                        status = "connecting";
+                        break;
+                    case "closed":
+                        status = "disconnected";
+                        break;
+                }
+                updatePeerStatus(uid, status);
+            });
+        }, 500);
+        return () => clearInterval(interval);
+    }, []);
+
     // ────────────────────────────────────────────────────────────────────────────
     //  Incoming-file bookkeeping
     // ────────────────────────────────────────────────────────────────────────────
