@@ -74,7 +74,7 @@ export function RtShare() {
         updatePeerStatus(uid, "connecting");
         // Determine the initiator deterministically to avoid offer glare
         const shouldInitiate = sessionId > uid;
-        createPeerConnection(uid, shouldInitiate);
+        createPeerConnection(uid);
     };
 
     useEffect(() => {
@@ -88,8 +88,8 @@ export function RtShare() {
 
         // Initialise WebSocket
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-            //const socket = new WebSocket("ws://localhost:3000/");
-            const socket = new WebSocket("wss://rt-share.diesing.pro:3000/");
+            const socket = new WebSocket("ws://localhost:3000/");
+            //const socket = new WebSocket("wss://rt-share.diesing.pro:3000/");
             wsRef.current = socket;
 
             setIsConnecting(true);
@@ -124,7 +124,7 @@ export function RtShare() {
                     setUsers(userList.map(id => ({ id, isOnline: true })));
                     userList.forEach(uid => {
                         if (uid !== storedSessionId) {
-                            createPeerConnection(uid, storedSessionId > uid);
+                            createPeerConnection(uid);
                         }
                     });
                 } else if (jEvent.type === "join" && jEvent.status === "userJoin") {
@@ -135,7 +135,7 @@ export function RtShare() {
                             : [...prev, { id: userID, isOnline: true }]
                     );
                     if (userID !== storedSessionId) {
-                        createPeerConnection(userID, storedSessionId > userID);
+                        createPeerConnection(userID);
                     }
                 } else if (jEvent.type === "leave" && jEvent.status === "userLeft") {
                     const userID = jEvent.data;
@@ -286,7 +286,7 @@ export function RtShare() {
         };
     };
 
-    const createPeerConnection = (userId: string, initiator: boolean = sessionId > userId) => {
+    const createPeerConnection = (userId: string) => {
         if (peerConns.current[userId]) return;
         setPeerStatuses(prev => ({
             ...prev,
@@ -310,7 +310,7 @@ export function RtShare() {
                 const delay = 1000 + Math.floor(Math.random() * 1000);
                 setTimeout(() => {
                     if (!peerConns.current[userId]) {
-                        createPeerConnection(userId, initiator);
+                        createPeerConnection(userId);
                     }
                 }, delay);
             }
@@ -328,7 +328,6 @@ export function RtShare() {
 
         pc.ondatachannel = e => setupDataChannel(userId, e.channel);
 
-        if (initiator) {
             const channel = pc.createDataChannel("chat");
             setupDataChannel(userId, channel);
             pc.createOffer()
@@ -342,7 +341,6 @@ export function RtShare() {
                         }) + "\n");
                     }
                 });
-        }
     };
 
     const handleOffer = (userId: string, data: string) => {
