@@ -116,8 +116,9 @@ export function RtShare() {
 
         // Initialise WebSocket
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-            const socket = new WebSocket("ws://localhost:3000/");
-            //const socket = new WebSocket("wss://rt-share.diesing.pro:3000/");
+            const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+            const wsHost = window.location.hostname;
+            const socket = new WebSocket(`${wsProtocol}://${wsHost}:3000/`);
             wsRef.current = socket;
 
             setIsConnecting(true);
