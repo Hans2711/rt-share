@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import type { User, Message } from "./types";
 import { Chat } from "./chat";
 import { UserList } from "./UserList";
+import { FileHistoryModal } from "./FileHistoryModal";
 import { generateSessionId } from "./helpers";
 
 
@@ -25,6 +26,9 @@ export function RtShare() {
     const [receiveProgress, setReceiveProgress] = useState<number | null>(null);
     const [sendFileInfo, setSendFileInfo] = useState<{ name: string; size: number } | null>(null);
     const [receiveFileInfo, setReceiveFileInfo] = useState<{ name: string; size: number } | null>(null);
+
+    const [receivedFiles, setReceivedFiles] = useState<Record<string, { filename: string; blob: Blob }[]>>({});
+    const [showHistory, setShowHistory] = useState(false);
 
     const [peerStatuses, setPeerStatuses] = useState<Record<string, PeerStatus>>({});
 
@@ -313,6 +317,11 @@ export function RtShare() {
                     document.body.appendChild(a).click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
+
+                    setReceivedFiles(prev => ({
+                        ...prev,
+                        [userId]: [...(prev[userId] || []), { filename: msg.filename, blob }],
+                    }));
 
                     const newMessage: Message = {
                         id: Date.now().toString(),
@@ -637,6 +646,7 @@ export function RtShare() {
                     selectedUser={selectedUser}
                     isOnline={isOnline}
                     onSelect={selectUser}
+                    onShowHistory={() => setShowHistory(true)}
                 />
                 <div className="flex flex-col flex-1 min-h-[60vh] overflow-y-auto">
                     {isConnecting ? (
@@ -659,6 +669,14 @@ export function RtShare() {
                     )}
                 </div>
             </div>
+            {showHistory && (
+                <FileHistoryModal
+                    files={Object.entries(receivedFiles).flatMap(([sender, fs]) =>
+                        fs.map(f => ({ ...f, sender }))
+                    )}
+                    onClose={() => setShowHistory(false)}
+                />
+            )}
         </div>
     );
 }

@@ -7,9 +7,10 @@ interface UserListProps {
     selectedUser: string | null;
     isOnline: boolean;
     onSelect: (id: string) => void;
+    onShowHistory: () => void;
 }
 
-export function UserList({ users, currentUser, selectedUser, isOnline, onSelect }: UserListProps) {
+export function UserList({ users, currentUser, selectedUser, isOnline, onSelect, onShowHistory }: UserListProps) {
     const [localOnly, setLocalOnly] = useState(false);
 
     const myIp = users.find(u => u.id === currentUser)?.ip;
@@ -21,7 +22,7 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect 
             : `Users (You are ${currentUser})`;
 
     return (
-        <div className="w-full bg-gray-100 border-b border-gray-300 overflow-y-auto md:w-[250px] md:border-b-0 md:border-r dark:bg-gray-800 dark:border-gray-800">
+        <div className="relative w-full bg-gray-100 border-b border-gray-300 overflow-y-auto md:w-[250px] md:border-b-0 md:border-r dark:bg-gray-800 dark:border-gray-800 pb-14">
             <h2 className="p-4 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-800">{heading}</h2>
             <label className="border-b border-gray-300 w-full p-3 dark:border-gray-800 flex items-center justify-between gap-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700">
                 <span>Local Only</span>
@@ -46,6 +47,11 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect 
                         </li>
                     ))}
             </ul>
+            <button
+                onClick={onShowHistory}
+                className="absolute bottom-2 left-1/2 -translate-x-1/2 md:left-auto md:right-2 md:translate-x-0 px-3 py-2 text-sm bg-green-500 text-white rounded">
+                Files
+            </button>
         </div>
     );
 }
