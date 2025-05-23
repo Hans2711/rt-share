@@ -10,7 +10,7 @@ interface ProgressInfo {
 
 interface ChatProps {
     currentUser: string;
-    targetUser: string;
+    targetUser: string | null;
     messages: Message[];
     onSendMessage: (text: string) => void;
     onSendFile: (file: File) => void;
@@ -38,20 +38,18 @@ export function Chat({
 
     const handleSendMessage = () => {
         const text = messageInput.trim();
-        if (text) {
-            console.log(text);
-            onSendMessage(text);
-            setMessageInput("");
-        }
+        if (!targetUser || !text) return;
+        console.log(text);
+        onSendMessage(text);
+        setMessageInput("");
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            console.log("Sending File", file);
-            onSendFile(file);
-            e.target.value = ""; // Reset file input
-        }
+        if (!targetUser || !file) return;
+        console.log("Sending File", file);
+        onSendFile(file);
+        e.target.value = ""; // Reset file input
     };
 
     const indicatorColor =
@@ -64,16 +62,18 @@ export function Chat({
     return (
         <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-800">
             <h2 className="p-3 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-800">
-                Chat with {targetUser}
-                <span className={`ml-2 text-sm ${indicatorColor}`}>
-                    {connectionStatus === "connected"
-                        ? "Connected"
-                        : connectionStatus === "reconnecting"
-                        ? "Reconnecting..."
-                        : connectionStatus === "connecting"
-                        ? "Connecting..."
-                        : "Disconnected"}
-                </span>
+                {targetUser ? `Chat with ${targetUser}` : "Chat"}
+                {targetUser && (
+                    <span className={`ml-2 text-sm ${indicatorColor}`}>
+                        {connectionStatus === "connected"
+                            ? "Connected"
+                            : connectionStatus === "reconnecting"
+                            ? "Reconnecting..."
+                            : connectionStatus === "connecting"
+                            ? "Connecting..."
+                            : "Disconnected"}
+                    </span>
+                )}
             </h2>
             <hr />
             {sendInfo.progress !== null && (
@@ -93,25 +93,31 @@ export function Chat({
                 </div>
             )}
             <div className="flex-1 p-4 overflow-y-auto dark:bg-gray-800">
-                {messages.map((message) => (
-                    <div
-                        key={message.id}
-                        className={`mb-2 p-2 rounded-lg max-w-[70%] break-words ${
-                            message.sender === currentUser
-                                ? "bg-green-500/20 ml-auto dark:bg-green-600 dark:text-white"
-                                : "bg-white mr-auto dark:bg-gray-700 dark:text-gray-300"
-                        }`}
-                    >
-                        <div className="text-xs text-gray-500 mb-1 dark:text-gray-300">
-                            {message.sender === currentUser ? "You" : message.sender}
+                {targetUser ? (
+                    messages.map((message) => (
+                        <div
+                            key={message.id}
+                            className={`mb-2 p-2 rounded-lg max-w-[70%] break-words ${
+                                message.sender === currentUser
+                                    ? "bg-green-500/20 ml-auto dark:bg-green-600 dark:text-white"
+                                    : "bg-white mr-auto dark:bg-gray-700 dark:text-gray-300"
+                            }`}
+                        >
+                            <div className="text-xs text-gray-500 mb-1 dark:text-gray-300">
+                                {message.sender === currentUser ? "You" : message.sender}
+                            </div>
+                            {message.isFile ? (
+                                <div className="file-message">{message.filename}</div>
+                            ) : (
+                                <div className="text-message">{message.text}</div>
+                            )}
                         </div>
-                        {message.isFile ? (
-                            <div className="file-message">{message.filename}</div>
-                        ) : (
-                            <div className="text-message">{message.text}</div>
-                        )}
+                    ))
+                ) : (
+                    <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-300">
+                        <p>Select a user to start chatting</p>
                     </div>
-                ))}
+                )}
             </div>
             <div className="p-2 flex flex-col gap-2 bg-gray-100 dark:bg-gray-700 md:p-4 md:gap-3">
                 <div className="flex gap-2 md:gap-3">
@@ -122,11 +128,17 @@ export function Chat({
                         onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                         placeholder="Type a message..."
                         className="flex-1 p-2 text-sm border border-gray-300 rounded dark:bg-gray-700 dark:text-gray-300 dark:border-gray-800"
+                        disabled={!targetUser}
                     />
-                    <button onClick={handleSendMessage} className="px-3 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 dark:bg-green-600">Send</button>
+                    <button onClick={handleSendMessage} disabled={!targetUser} className="px-3 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 dark:bg-green-600 disabled:opacity-50">Send</button>
                     <div className="relative">
                         <div className="flex h-full">
-                            <label htmlFor="file" className="px-3 py-2 text-sm bg-green-500 text-white rounded-l cursor-pointer hover:bg-green-600 dark:bg-green-600">Send File</label>
+                            <label
+                                htmlFor="file"
+                                className={`px-3 py-2 text-sm bg-green-500 text-white rounded-l cursor-pointer hover:bg-green-600 dark:bg-green-600 ${!targetUser ? 'opacity-50 pointer-events-none' : ''}`}
+                            >
+                                Send File
+                            </label>
                             <button
                                 type="button"
                                 onClick={() => setMenuOpen(v => !v)}

@@ -685,20 +685,18 @@ export function RtShare() {
                         <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-300">Connecting...</div>
                     ) : error ? (
                         <div className="flex items-center justify-center h-full text-red-700 dark:text-red-800"><p>Error: {error}</p></div>
-                    ) : selectedUser ? (
+                    ) : (
                         <Chat
                             currentUser={sessionId}
                             targetUser={selectedUser}
-                            messages={messages[selectedUser] || []}
+                            messages={selectedUser ? messages[selectedUser] || [] : []}
                             sendInfo={{ progress: sendProgress, filename: sendFileInfo?.name, size: sendFileInfo?.size }}
                             receiveInfo={{ progress: receiveProgress, filename: receiveFileInfo?.name, size: receiveFileInfo?.size }}
-                            connectionStatus={peerStatuses[selectedUser] || "disconnected"}
-                            onSendMessage={text => handleSendMessage(selectedUser, text)}
-                            onSendFile={file => handleSendFile(selectedUser, file)}
+                            connectionStatus={selectedUser ? peerStatuses[selectedUser] || "disconnected" : "disconnected"}
+                            onSendMessage={selectedUser ? (text => handleSendMessage(selectedUser, text)) : () => {}}
+                            onSendFile={selectedUser ? (file => handleSendFile(selectedUser, file)) : () => {}}
                             onShowHistory={() => setShowHistory(true)}
                         />
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-300"><p>Select a user to start chatting</p></div>
                     )}
                 </div>
             </div>

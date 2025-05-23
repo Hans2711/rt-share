@@ -29,7 +29,7 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect 
 
     return (
         <div className="relative w-full bg-gray-100 border-b border-gray-300 overflow-y-auto md:w-[250px] md:border-b-0 md:border-r dark:bg-gray-800 dark:border-gray-800 ">
-            <h2 className="p-4 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-100">{heading}</h2>
+            <h2 className="p-3 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-100">{heading}</h2>
             <label className="border-b border-gray-300 w-full p-3 dark:border-gray-100 flex items-center justify-between gap-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700">
                 <span>Local Only</span>
                 <input
