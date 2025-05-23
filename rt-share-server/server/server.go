@@ -3,20 +3,25 @@ package server
 import (
 	"fmt"
 	"golang.org/x/net/websocket"
+	"strings"
 	"sync"
 	"time"
 )
 
 type Server struct {
-	conns map[*websocket.Conn]bool
-	users map[string]*websocket.Conn
-	mu    sync.RWMutex
+	conns   map[*websocket.Conn]bool
+	users   map[string]*websocket.Conn
+	userIPs map[string]string
+	connIPs map[*websocket.Conn]string
+	mu      sync.RWMutex
 }
 
 func NewServer() *Server {
 	return &Server{
-		conns: make(map[*websocket.Conn]bool),
-		users: make(map[string]*websocket.Conn),
+		conns:   make(map[*websocket.Conn]bool),
+		users:   make(map[string]*websocket.Conn),
+		userIPs: make(map[string]string),
+		connIPs: make(map[*websocket.Conn]string),
 	}
 }
 
@@ -45,8 +50,12 @@ func (s *Server) removeConnection(ws *websocket.Conn) {
 	// Close the connection
 	ws.Close()
 
+	// Remove IP tracking
+	delete(s.connIPs, ws)
+
 	// Broadcast user left if needed
 	if userID != "" {
+		delete(s.userIPs, userID)
 		go s.safeBroadcast(Response{
 			Type:    "leave",
 			Status:  "userLeft",
@@ -60,6 +69,8 @@ func (s *Server) addConnection(ws *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.conns[ws] = true
+	host, _, _ := strings.Cut(ws.RemoteAddr().String(), ":")
+	s.connIPs[ws] = host
 }
 
 func WSHandler(s *Server) websocket.Handler {

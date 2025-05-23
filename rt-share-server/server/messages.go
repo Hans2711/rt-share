@@ -20,6 +20,7 @@ type Response struct {
 	Data     string `json:"data"`
 	Filename string `json:"filename"`
 	Sender   string `json:"sender"`
+	IP       string `json:"ip,omitempty"`
 	Bytes    []byte `json:"bytes"`
 }
 

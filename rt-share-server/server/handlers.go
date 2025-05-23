@@ -13,18 +13,20 @@ func (s *Server) handleJoin(r Request, ws *websocket.Conn) (Response, error) {
 
 	fmt.Println("User %s joined", userID)
 
+	ip := s.connIPs[ws]
 	s.broadcastResponse(Response{
 		Type:    r.Type,
 		Status:  "userJoin",
 		Message: fmt.Sprintf("User %s joined", userID),
 		Data:    userID,
+		IP:      ip,
 	})
 
 	return Response{
 		Type:    r.Type,
 		Status:  "ok",
 		Message: fmt.Sprintf("User %s joined", userID),
-		Data:    s.getAllUserIDsJSON(),
+		Data:    s.getAllUserInfoJSON(),
 	}, nil
 }
 
@@ -45,7 +47,7 @@ func (s *Server) handleLeave(r Request, ws *websocket.Conn) (Response, error) {
 		Type:    r.Type,
 		Status:  "ok",
 		Message: "Left",
-		Data:    s.getAllUserIDsJSON(),
+		Data:    s.getAllUserInfoJSON(),
 	}, nil
 }
 

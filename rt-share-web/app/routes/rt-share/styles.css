@@ -30,6 +30,14 @@ body {
     background-color: #fff;
 }
 
+.user-list local-only {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: calc(100% - 20px);
+    margin: 10px;
+}
+
 .user-list h2 {
     padding: 15px;
     margin: 0;
