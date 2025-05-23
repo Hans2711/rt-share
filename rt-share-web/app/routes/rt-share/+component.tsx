@@ -543,7 +543,7 @@ export function RtShare() {
 
     return (
         <div className="p-2 md:p-5 max-w-screen-xl mx-auto h-screen overflow-hidden">
-            <div className="flex flex-col h-full border border-tertiary-dark rounded-lg overflow-hidden md:flex-row md:h-[80vh] dark:border-secondary">
+            <div className="flex flex-col h-full border border-gray-300 rounded-lg overflow-hidden md:flex-row md:h-[80vh] dark:border-gray-800">
                 <UserList
                     users={users}
                     currentUser={sessionId}
@@ -553,9 +553,9 @@ export function RtShare() {
                 />
                 <div className="flex flex-col flex-1 min-h-[60vh] overflow-y-auto">
                     {isConnecting ? (
-                        <div className="flex items-center justify-center h-full text-secondary-light dark:text-tertiary-dark">Connecting...</div>
+                        <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-300">Connecting...</div>
                     ) : error ? (
-                        <div className="flex items-center justify-center h-full text-danger dark:text-danger-dark"><p>Error: {error}</p></div>
+                        <div className="flex items-center justify-center h-full text-red-700 dark:text-red-800"><p>Error: {error}</p></div>
                     ) : selectedUser ? (
                         <Chat
                             currentUser={sessionId}
@@ -568,7 +568,7 @@ export function RtShare() {
                             onSendFile={file => handleSendFile(selectedUser, file)}
                         />
                     ) : (
-                        <div className="flex items-center justify-center h-full text-secondary-light dark:text-tertiary-dark"><p>Select a user to start chatting</p></div>
+                        <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-300"><p>Select a user to start chatting</p></div>
                     )}
                 </div>
             </div>

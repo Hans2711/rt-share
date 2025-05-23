@@ -53,14 +53,14 @@ export function Chat({
 
     const indicatorColor =
         connectionStatus === "connected"
-            ? "text-fetch dark:text-fetch-dark"
+            ? "text-green-500 dark:text-green-600"
             : connectionStatus === "connecting" || connectionStatus === "reconnecting"
-            ? "text-edit dark:text-edit-dark"
-            : "text-danger dark:text-danger-dark";
+            ? "text-amber-500 dark:text-amber-600"
+            : "text-red-700 dark:text-red-800";
 
     return (
-        <div className="flex flex-col h-full bg-tertiary-light dark:bg-secondary">
-            <h2 className="p-4 m-0 bg-tertiary border-b border-tertiary-dark dark:bg-secondary-light dark:border-secondary">
+        <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-800">
+            <h2 className="p-4 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-800">
                 Chat with {targetUser}
                 <span className={`ml-2 text-sm ${indicatorColor}`}>
                     {connectionStatus === "connected"
@@ -89,17 +89,17 @@ export function Chat({
                     <progress value={receiveInfo.progress ?? 0} max={100} className="w-full"></progress>
                 </div>
             )}
-            <div className="flex-1 p-4 overflow-y-auto dark:bg-secondary">
+            <div className="flex-1 p-4 overflow-y-auto dark:bg-gray-800">
                 {messages.map((message) => (
                     <div
                         key={message.id}
                         className={`mb-2 p-2 rounded-lg max-w-[70%] break-words ${
                             message.sender === currentUser
-                                ? "bg-fetch/20 ml-auto dark:bg-fetch-dark dark:text-white"
-                                : "bg-tertiary mr-auto dark:bg-secondary-light dark:text-tertiary-dark"
+                                ? "bg-green-500/20 ml-auto dark:bg-green-600 dark:text-white"
+                                : "bg-gray-100 mr-auto dark:bg-gray-700 dark:text-gray-300"
                         }`}
                     >
-                        <div className="text-xs text-secondary-light mb-1 dark:text-tertiary-dark">
+                        <div className="text-xs text-gray-500 mb-1 dark:text-gray-300">
                             {message.sender === currentUser ? "You" : message.sender}
                         </div>
                         {message.isFile ? (
@@ -110,7 +110,7 @@ export function Chat({
                     </div>
                 ))}
             </div>
-            <div className="p-2 flex flex-col gap-2 bg-tertiary dark:bg-secondary-light md:p-4 md:gap-3">
+            <div className="p-2 flex flex-col gap-2 bg-gray-100 dark:bg-gray-700 md:p-4 md:gap-3">
                 <div className="flex gap-2 md:gap-3">
                     <input
                         type="text"
@@ -118,10 +118,10 @@ export function Chat({
                         onChange={(e) => setMessageInput(e.target.value)}
                         onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                         placeholder="Type a message..."
-                        className="flex-1 p-2 text-sm border border-tertiary-dark rounded dark:bg-secondary-light dark:text-tertiary-dark dark:border-secondary"
+                        className="flex-1 p-2 text-sm border border-gray-300 rounded dark:bg-gray-700 dark:text-gray-300 dark:border-gray-800"
                     />
-                    <button onClick={handleSendMessage} className="px-3 py-2 text-sm bg-fetch text-white rounded hover:bg-fetch-dark dark:bg-fetch-dark">Send</button>
-                    <label htmlFor="file" className="px-3 py-2 text-sm bg-fetch text-white rounded cursor-pointer hover:bg-fetch-dark dark:bg-fetch-dark">Send File</label>
+                    <button onClick={handleSendMessage} className="px-3 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 dark:bg-green-600">Send</button>
+                    <label htmlFor="file" className="px-3 py-2 text-sm bg-green-500 text-white rounded cursor-pointer hover:bg-green-600 dark:bg-green-600">Send File</label>
                     <input type="file" name="file" id="file" onChange={handleFileChange} className="hidden" />
                 </div>
             </div>
