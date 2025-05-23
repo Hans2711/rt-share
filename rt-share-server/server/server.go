@@ -9,6 +9,30 @@ import (
 	"time"
 )
 
+// resolveAddrIP takes an address string and attempts to return the
+// underlying IP address. If the address already contains an IP, it is
+// returned directly. If it contains a hostname, the first resolved IP
+// is returned. If resolution fails, the original host portion is
+// returned.
+func resolveAddrIP(addr string) string {
+	if strings.Contains(addr, "://") {
+		parts := strings.SplitN(addr, "://", 2)
+		addr = parts[1]
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+	ips, err := net.LookupIP(host)
+	if err == nil && len(ips) > 0 {
+		return ips[0].String()
+	}
+	return host
+}
+
 type Server struct {
 	conns   map[*websocket.Conn]bool
 	users   map[string]*websocket.Conn
@@ -71,15 +95,7 @@ func (s *Server) addConnection(ws *websocket.Conn) {
 	defer s.mu.Unlock()
 	s.conns[ws] = true
 	addr := ws.RemoteAddr().String()
-	if strings.Contains(addr, "://") {
-		parts := strings.SplitN(addr, "://", 2)
-		addr = parts[1]
-	}
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-	s.connIPs[ws] = host
+	s.connIPs[ws] = resolveAddrIP(addr)
 }
 
 func WSHandler(s *Server) websocket.Handler {
