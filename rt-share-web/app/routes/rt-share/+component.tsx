@@ -646,7 +646,6 @@ export function RtShare() {
                     selectedUser={selectedUser}
                     isOnline={isOnline}
                     onSelect={selectUser}
-                    onShowHistory={() => setShowHistory(true)}
                 />
                 <div className="flex flex-col flex-1 min-h-[60vh] overflow-y-auto">
                     {isConnecting ? (
@@ -663,6 +662,7 @@ export function RtShare() {
                             connectionStatus={peerStatuses[selectedUser] || "disconnected"}
                             onSendMessage={text => handleSendMessage(selectedUser, text)}
                             onSendFile={file => handleSendFile(selectedUser, file)}
+                            onShowHistory={() => setShowHistory(true)}
                         />
                     ) : (
                         <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-300"><p>Select a user to start chatting</p></div>

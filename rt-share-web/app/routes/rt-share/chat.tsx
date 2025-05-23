@@ -14,6 +14,7 @@ interface ChatProps {
     messages: Message[];
     onSendMessage: (text: string) => void;
     onSendFile: (file: File) => void;
+    onShowHistory: () => void;
     sendInfo?: ProgressInfo;
     receiveInfo?: ProgressInfo;
     connectionStatus: "connected" | "connecting" | "reconnecting" | "disconnected";
@@ -27,11 +28,13 @@ export function Chat({
     messages,
     onSendMessage,
     onSendFile,
+    onShowHistory,
     sendInfo = { progress: null },
     receiveInfo = { progress: null },
     connectionStatus,
 }: ChatProps) {
     const [messageInput, setMessageInput] = useState("");
+    const [menuOpen, setMenuOpen] = useState(false);
 
     const handleSendMessage = () => {
         const text = messageInput.trim();
@@ -60,7 +63,7 @@ export function Chat({
 
     return (
         <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-800">
-            <h2 className="p-4 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-800">
+            <h2 className="p-3 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-800">
                 Chat with {targetUser}
                 <span className={`ml-2 text-sm ${indicatorColor}`}>
                     {connectionStatus === "connected"
@@ -121,7 +124,28 @@ export function Chat({
                         className="flex-1 p-2 text-sm border border-gray-300 rounded dark:bg-gray-700 dark:text-gray-300 dark:border-gray-800"
                     />
                     <button onClick={handleSendMessage} className="px-3 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 dark:bg-green-600">Send</button>
-                    <label htmlFor="file" className="px-3 py-2 text-sm bg-green-500 text-white rounded cursor-pointer hover:bg-green-600 dark:bg-green-600">Send File</label>
+                    <div className="relative">
+                        <div className="flex h-full">
+                            <label htmlFor="file" className="px-3 py-2 text-sm bg-green-500 text-white rounded-l cursor-pointer hover:bg-green-600 dark:bg-green-600">Send File</label>
+                            <button
+                                type="button"
+                                onClick={() => setMenuOpen(v => !v)}
+                                className="px-2 py-2 text-sm bg-green-500 text-white rounded-r hover:bg-green-600 dark:bg-green-600"
+                            >
+                                &#9650;
+                            </button>
+                        </div>
+                        {menuOpen && (
+                            <div className="absolute bottom-full mb-2 right-0 bg-white border border-gray-300 rounded shadow-md dark:bg-gray-700 dark:border-gray-600">
+                                <button
+                                    onClick={() => { setMenuOpen(false); onShowHistory(); }}
+                                    className="block px-4 py-2 text-sm w-full text-left hover:bg-gray-100 dark:hover:bg-gray-600"
+                                >
+                                    File History
+                                </button>
+                            </div>
+                        )}
+                    </div>
                     <input type="file" name="file" id="file" onChange={handleFileChange} className="hidden" />
                 </div>
             </div>
