@@ -96,7 +96,7 @@ export function Chat({
                         className={`mb-2 p-2 rounded-lg max-w-[70%] break-words ${
                             message.sender === currentUser
                                 ? "bg-green-500/20 ml-auto dark:bg-green-600 dark:text-white"
-                                : "bg-gray-100 mr-auto dark:bg-gray-700 dark:text-gray-300"
+                                : "bg-white mr-auto dark:bg-gray-700 dark:text-gray-300"
                         }`}
                     >
                         <div className="text-xs text-gray-500 mb-1 dark:text-gray-300">

@@ -60,7 +60,7 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect,
             </ul>
             <button
                 onClick={onShowHistory}
-                className="absolute bottom-2 m-2 w-1/3 left-1/2 -translate-x-1/2 md:left-auto md:right-2 md:translate-x-0 px-3 py-2 text-sm bg-green-500 text-white rounded">
+                className="fixed bottom-2 left-1/2 -translate-x-1/2 w-1/3 m-2 md:absolute md:left-auto md:right-2 md:bottom-2 md:translate-x-0 px-3 py-2 text-sm bg-green-500 text-white rounded">
                 Files
             </button>
         </div>
