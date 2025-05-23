@@ -32,6 +32,9 @@ export function RtShare() {
     const allowedSenders = useRef<Record<string, boolean>>({});
     const pendingFiles = useRef<Record<string, File | null>>({});
 
+    const usersRef = useRef<User[]>([]);
+    const isOnlineRef = useRef(false);
+
     const updatePeerStatus = (id: string, status: PeerStatus) => {
         setPeerStatuses(prev => ({ ...prev, [id]: status }));
     };
@@ -39,6 +42,14 @@ export function RtShare() {
     useEffect(() => {
         selectedUserRef.current = selectedUser;
     }, [selectedUser]);
+
+    useEffect(() => {
+        usersRef.current = users;
+    }, [users]);
+
+    useEffect(() => {
+        isOnlineRef.current = isOnline;
+    }, [isOnline]);
 
     // 16 KiB payloads balance throughput and memory
     const CHUNK_SIZE = 16 * 1024;
@@ -98,6 +109,11 @@ export function RtShare() {
 
     const selectUser = (uid: string) => {
         setSelectedUser(uid);
+        const userOnline = usersRef.current.some(u => u.id === uid && u.isOnline);
+        if (!isOnlineRef.current || !userOnline) {
+            updatePeerStatus(uid, "disconnected");
+            return;
+        }
         updatePeerStatus(uid, "connecting");
         // Determine the initiator deterministically to avoid offer glare
         const shouldInitiate = sessionId > uid;
@@ -143,6 +159,11 @@ export function RtShare() {
                 setTimeout(() => window.location.reload(), 3000);
             });
 
+            socket.onclose = () => {
+                setIsOnline(false);
+                cleanupPeerConnections();
+            };
+
             socket.onmessage = (event) => {
                 const jEvent = JSON.parse(event.data);
                 console.log("Received event:", jEvent);
@@ -169,6 +190,15 @@ export function RtShare() {
                 } else if (jEvent.type === "leave" && jEvent.status === "userLeft") {
                     const userID = jEvent.data;
                     setUsers(prev => prev.map(u => u.id === userID ? { ...u, isOnline: false } : u));
+                    updatePeerStatus(userID, "disconnected");
+                    try {
+                        dataChannels.current[userID]?.close();
+                    } catch {}
+                    try {
+                        peerConns.current[userID]?.close();
+                    } catch {}
+                    delete dataChannels.current[userID];
+                    delete peerConns.current[userID];
                 } else if (jEvent.type === "offer" && jEvent.status === "forward") {
                     handleOffer(jEvent.sender, jEvent.data);
                 } else if (jEvent.type === "answer" && jEvent.status === "forward") {
@@ -195,19 +225,24 @@ export function RtShare() {
 
         channel.onopen = () => updatePeerStatus(userId, "connected");
         channel.onclose = () => {
-            updatePeerStatus(userId, "reconnecting");
             delete dataChannels.current[userId];
             try {
                 const pc = peerConns.current[userId];
                 if (pc) pc.close();
             } catch {}
             delete peerConns.current[userId];
-            const delay = 500 + Math.floor(Math.random() * 500);
-            setTimeout(() => {
-                if (!peerConns.current[userId]) {
-                    createPeerConnection(userId);
-                }
-            }, delay);
+            const userOnline = usersRef.current.some(u => u.id === userId && u.isOnline);
+            if (isOnlineRef.current && userOnline) {
+                updatePeerStatus(userId, "reconnecting");
+                const delay = 500 + Math.floor(Math.random() * 500);
+                setTimeout(() => {
+                    if (!peerConns.current[userId]) {
+                        createPeerConnection(userId);
+                    }
+                }, delay);
+            } else {
+                updatePeerStatus(userId, "disconnected");
+            }
         };
 
         channel.onmessage = (e) => {
@@ -317,6 +352,10 @@ export function RtShare() {
 
     const createPeerConnection = (userId: string) => {
         if (peerConns.current[userId]) return;
+        if (!isOnlineRef.current || !usersRef.current.some(u => u.id === userId && u.isOnline)) {
+            updatePeerStatus(userId, "disconnected");
+            return;
+        }
         setPeerStatuses(prev => ({
             ...prev,
             [userId]: prev[userId] === "reconnecting" ? "reconnecting" : "connecting",
@@ -339,14 +378,19 @@ export function RtShare() {
                 try { pc.close(); } catch {}
                 delete peerConns.current[userId];
                 delete dataChannels.current[userId];
-                updatePeerStatus(userId, "reconnecting");
-                // Add jitter so both peers don't reconnect simultaneously
-                const delay = 1000 + Math.floor(Math.random() * 1000);
-                setTimeout(() => {
-                    if (!peerConns.current[userId]) {
-                        createPeerConnection(userId);
-                    }
-                }, delay);
+                const userOnline = usersRef.current.some(u => u.id === userId && u.isOnline);
+                if (isOnlineRef.current && userOnline) {
+                    updatePeerStatus(userId, "reconnecting");
+                    // Add jitter so both peers don't reconnect simultaneously
+                    const delay = 1000 + Math.floor(Math.random() * 1000);
+                    setTimeout(() => {
+                        if (!peerConns.current[userId]) {
+                            createPeerConnection(userId);
+                        }
+                    }, delay);
+                } else {
+                    updatePeerStatus(userId, "disconnected");
+                }
             }
         };
 
@@ -407,7 +451,11 @@ export function RtShare() {
     const ensureConnection = (userId: string) => {
         const channel = dataChannels.current[userId];
         if (!channel || channel.readyState !== "open") {
-            createPeerConnection(userId);
+            if (isOnlineRef.current && usersRef.current.some(u => u.id === userId && u.isOnline)) {
+                createPeerConnection(userId);
+            } else {
+                updatePeerStatus(userId, "disconnected");
+            }
             return false;
         }
         return true;
@@ -537,8 +585,16 @@ export function RtShare() {
                 window.location.reload();
             }
         };
+        const onOffline = () => {
+            setIsOnline(false);
+            cleanupPeerConnections();
+        };
         window.addEventListener("online", onOnline);
-        return () => window.removeEventListener("online", onOnline);
+        window.addEventListener("offline", onOffline);
+        return () => {
+            window.removeEventListener("online", onOnline);
+            window.removeEventListener("offline", onOffline);
+        };
     }, []);
 
     return (
