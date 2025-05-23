@@ -7,6 +7,6 @@
 
 html,
 body {
-    @apply bg-tertiary-light dark:bg-secondary-dark
+    @apply bg-tertiary-light dark:bg-secondary-dark;
 }
 
