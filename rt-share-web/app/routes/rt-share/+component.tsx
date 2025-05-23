@@ -3,7 +3,7 @@ import type { User, Message } from "./types";
 import { Chat } from "./chat";
 import { UserList } from "./UserList";
 import { FileHistoryModal } from "./FileHistoryModal";
-import { generateSessionId } from "./helpers";
+import { generateSessionId, blobToBase64, base64ToBlob, base64SizeInBytes } from "./helpers";
 
 
 type PeerStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
@@ -28,6 +28,22 @@ export function RtShare() {
     const [receiveFileInfo, setReceiveFileInfo] = useState<{ name: string; size: number } | null>(null);
 
     const [receivedFiles, setReceivedFiles] = useState<Record<string, { filename: string; blob: Blob }[]>>({});
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem("receivedFileHistory");
+            if (raw) {
+                const arr: Array<{ sender: string; filename: string; data: string }> = JSON.parse(raw);
+                const map: Record<string, { filename: string; blob: Blob }[]> = {};
+                arr.forEach(e => {
+                    map[e.sender] ??= [];
+                    map[e.sender].push({ filename: e.filename, blob: base64ToBlob(e.data) });
+                });
+                setReceivedFiles(map);
+            }
+        } catch (err) {
+            console.error("Failed to load file history", err);
+        }
+    }, []);
     const [showHistory, setShowHistory] = useState(false);
 
     const [peerStatuses, setPeerStatuses] = useState<Record<string, PeerStatus>>({});
@@ -38,6 +54,22 @@ export function RtShare() {
 
     const usersRef = useRef<User[]>([]);
     const isOnlineRef = useRef(false);
+
+    const saveFileEntry = async (sender: string, filename: string, blob: Blob) => {
+        const base64 = await blobToBase64(blob);
+        let entries: Array<{ sender: string; filename: string; data: string }> = [];
+        try {
+            entries = JSON.parse(localStorage.getItem("receivedFileHistory") || "[]");
+        } catch {}
+        entries.push({ sender, filename, data: base64 });
+        let total = entries.reduce((s, e) => s + base64SizeInBytes(e.data), 0);
+        const LIMIT = 1.5 * 1024 * 1024 * 1024; // 1.5 GB
+        while (total > LIMIT && entries.length > 0) {
+            const removed = entries.shift();
+            total = entries.reduce((s, e) => s + base64SizeInBytes(e.data), 0);
+        }
+        localStorage.setItem("receivedFileHistory", JSON.stringify(entries));
+    };
 
     const updatePeerStatus = (id: string, status: PeerStatus) => {
         setPeerStatuses(prev => ({ ...prev, [id]: status }));
@@ -322,6 +354,7 @@ export function RtShare() {
                         ...prev,
                         [userId]: [...(prev[userId] || []), { filename: msg.filename, blob }],
                     }));
+                    saveFileEntry(userId, msg.filename, blob);
 
                     const newMessage: Message = {
                         id: Date.now().toString(),
