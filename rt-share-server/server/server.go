@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"golang.org/x/net/websocket"
 	"net"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
