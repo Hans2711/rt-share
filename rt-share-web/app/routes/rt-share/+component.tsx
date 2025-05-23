@@ -117,7 +117,7 @@ export function RtShare() {
         updatePeerStatus(uid, "connecting");
         // Determine the initiator deterministically to avoid offer glare
         const shouldInitiate = sessionId > uid;
-        createPeerConnection(uid);
+        createPeerConnection(uid, shouldInitiate);
     };
 
     useEffect(() => {
@@ -173,7 +173,8 @@ export function RtShare() {
                     setUsers(userList.map(u => ({ ...u, isOnline: true })));
                     userList.forEach(u => {
                         if (u.id !== storedSessionId) {
-                            createPeerConnection(u.id);
+                            const shouldInitiate = storedSessionId > u.id;
+                            createPeerConnection(u.id, shouldInitiate);
                         }
                     });
                 } else if (jEvent.type === "join" && jEvent.status === "userJoin") {
@@ -185,7 +186,8 @@ export function RtShare() {
                             : [...prev, { id: userID, ip, isOnline: true }]
                     );
                     if (userID !== storedSessionId) {
-                        createPeerConnection(userID);
+                        const shouldInitiate = storedSessionId > userID;
+                        createPeerConnection(userID, shouldInitiate);
                     }
                 } else if (jEvent.type === "leave" && jEvent.status === "userLeft") {
                     const userID = jEvent.data;
@@ -350,7 +352,7 @@ export function RtShare() {
         };
     };
 
-    const createPeerConnection = (userId: string) => {
+    const createPeerConnection = (userId: string, initiate: boolean = sessionId > userId) => {
         if (peerConns.current[userId]) return;
         if (!isOnlineRef.current || !usersRef.current.some(u => u.id === userId && u.isOnline)) {
             updatePeerStatus(userId, "disconnected");
@@ -361,7 +363,11 @@ export function RtShare() {
             [userId]: prev[userId] === "reconnecting" ? "reconnecting" : "connecting",
         }));
         const pc = new RTCPeerConnection({
-            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+            iceServers: [
+                { urls: "stun:stun.l.google.com:19302" },
+                { urls: "stun:stun1.l.google.com:19302" },
+                { urls: "stun:stun2.l.google.com:19302" },
+            ],
         });
         peerConns.current[userId] = pc;
 
@@ -406,6 +412,7 @@ export function RtShare() {
 
         pc.ondatachannel = e => setupDataChannel(userId, e.channel);
 
+        if (initiate) {
             const channel = pc.createDataChannel("chat");
             setupDataChannel(userId, channel);
             pc.createOffer()
@@ -419,11 +426,16 @@ export function RtShare() {
                         }) + "\n");
                     }
                 });
+        }
     };
 
     const handleOffer = (userId: string, data: string) => {
         createPeerConnection(userId, false);
         const pc = peerConns.current[userId];
+        if (!pc || pc.signalingState !== "stable") {
+            console.warn("Ignoring unexpected offer in state", pc?.signalingState);
+            return;
+        }
         pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)))
           .then(() => pc.createAnswer())
           .then(a => pc.setLocalDescription(a))
@@ -440,7 +452,9 @@ export function RtShare() {
 
     const handleAnswer = (userId: string, data: string) => {
         const pc = peerConns.current[userId];
-        if (pc) pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)));
+        if (pc && pc.signalingState === "have-local-offer") {
+            pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)));
+        }
     };
 
     const handleCandidate = (userId: string, data: string) => {
