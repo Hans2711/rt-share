@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"golang.org/x/net/websocket"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,39 @@ func resolveAddrIP(addr string) string {
 		return ips[0].String()
 	}
 	return host
+}
+
+// getClientIP extracts the originating IP address for a websocket connection.
+// It first checks the websocket's associated HTTP request for standard
+// forwarding headers and falls back to the remote address on the connection.
+func getClientIP(ws *websocket.Conn) string {
+	if ws == nil {
+		return ""
+	}
+
+	// Attempt to use information from the HTTP request when available.
+	if req := ws.Request(); req != nil {
+		// Check common proxy headers first.
+		if ip := req.Header.Get("X-Forwarded-For"); ip != "" {
+			parts := strings.Split(ip, ",")
+			if len(parts) > 0 {
+				ip = strings.TrimSpace(parts[0])
+				if ip != "" {
+					return resolveAddrIP(ip)
+				}
+			}
+		}
+		if ip := req.Header.Get("X-Real-IP"); ip != "" {
+			return resolveAddrIP(strings.TrimSpace(ip))
+		}
+		if host, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+			return resolveAddrIP(host)
+		}
+		return resolveAddrIP(req.RemoteAddr)
+	}
+
+	// Fallback to the connection's remote address.
+	return resolveAddrIP(ws.RemoteAddr().String())
 }
 
 type Server struct {
@@ -94,8 +128,7 @@ func (s *Server) addConnection(ws *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.conns[ws] = true
-	addr := ws.RemoteAddr().String()
-	s.connIPs[ws] = resolveAddrIP(addr)
+	s.connIPs[ws] = getClientIP(ws)
 }
 
 func WSHandler(s *Server) websocket.Handler {
