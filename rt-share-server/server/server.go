@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"golang.org/x/net/websocket"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -69,7 +70,15 @@ func (s *Server) addConnection(ws *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.conns[ws] = true
-	host, _, _ := strings.Cut(ws.RemoteAddr().String(), ":")
+	addr := ws.RemoteAddr().String()
+	if strings.Contains(addr, "://") {
+		parts := strings.SplitN(addr, "://", 2)
+		addr = parts[1]
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
 	s.connIPs[ws] = host
 }
 
