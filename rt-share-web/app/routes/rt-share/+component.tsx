@@ -475,6 +475,23 @@ export function RtShare() {
         return true;
     };
 
+    // Periodically attempt to (re)establish missing peer connections
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (!isOnlineRef.current) return;
+            usersRef.current.forEach(u => {
+                if (u.id === sessionId || !u.isOnline) return;
+                const pc = peerConns.current[u.id];
+                const state = pc?.connectionState;
+                if (!pc || state === "closed" || state === "failed" || state === "disconnected") {
+                    const shouldInitiate = sessionId > u.id;
+                    createPeerConnection(u.id, shouldInitiate);
+                }
+            });
+        }, 2000);
+        return () => clearInterval(interval);
+    }, [sessionId]);
+
     const handleSendMessage = (targetUser: string, text: string) => {
         if (!ensureConnection(targetUser)) {
             alert("Peer connection not established yet. Reconnecting...");
