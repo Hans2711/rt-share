@@ -10,34 +10,50 @@ export default {
             /* ───────── core palette ───────── */
             colors: {
                 /* brand */
-                primary:       '#E2232A',
-                'primary-dark':'#B21B22',
-                'primary-light':  '#F06B71', /* light red */
-                'primary-darker': '#8A151B', /* deepest red */
+                primary: {
+                    DEFAULT: '#E2232A',
+                    dark:    '#B21B22',
+                    light:   '#F06B71', /* light red */
+                    darker:  '#8A151B', /* deepest red */
+                },
 
                 /* neutrals */
-                secondary:       '#1E1E21',
-                'secondary-dark':'#000000',
-                'secondary-light':'#4B4B50',
-                tertiary:        '#F3F4F6',
-                'tertiary-dark': '#D1D5DB',
-                'tertiary-light':'#FFFFFF',
+                secondary: {
+                    DEFAULT: '#1E1E21',
+                    dark:    '#000000',
+                    light:   '#4B4B50',
+                },
+                tertiary: {
+                    DEFAULT: '#F3F4F6',
+                    dark:    '#D1D5DB',
+                    light:   '#FFFFFF',
+                },
 
                 /* semantic button hues */
-                edit:       '#F59E0B',  /* amber-500  */
-                'edit-dark':'#D97706',  /* amber-600  */
+                edit: {
+                    DEFAULT: '#F59E0B',  /* amber-500  */
+                    dark:    '#D97706',  /* amber-600  */
+                },
 
-                details:       '#3B82F6', /* blue-500   */
-                'details-dark':'#2563EB', /* blue-600   */
+                details: {
+                    DEFAULT: '#3B82F6', /* blue-500   */
+                    dark:    '#2563EB', /* blue-600   */
+                },
 
-                fetch:       '#22C55E',  /* green-500  */
-                'fetch-dark':'#16A34A',  /* green-600  */
+                fetch: {
+                    DEFAULT: '#22C55E',  /* green-500  */
+                    dark:    '#16A34A',  /* green-600  */
+                },
 
-                diff:       '#8B5CF6',   /* violet-500 */
-                'diff-dark':'#7C3AED',   /* violet-600 */
+                diff: {
+                    DEFAULT: '#8B5CF6',   /* violet-500 */
+                    dark:    '#7C3AED',   /* violet-600 */
+                },
 
-                danger:        '#B91C1C',   // red-700
-                'danger-dark': '#7F1D1D',   // red-800
+                danger: {
+                    DEFAULT: '#B91C1C',   // red-700
+                    dark:    '#7F1D1D',   // red-800
+                },
             },
 
             /* container settings … */
