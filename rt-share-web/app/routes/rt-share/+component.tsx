@@ -4,7 +4,6 @@ import { Chat } from "./chat";
 import { UserList } from "./UserList";
 import { generateSessionId } from "./helpers";
 
-import "./styles.css";
 
 type PeerStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
 
@@ -543,8 +542,8 @@ export function RtShare() {
     }, []);
 
     return (
-        <div className="rt-share-container">
-            <div className="rt-share-layout">
+        <div className="p-2 md:p-5 max-w-screen-xl mx-auto h-screen overflow-hidden">
+            <div className="flex flex-col h-full border border-gray-300 rounded-lg overflow-hidden md:flex-row md:h-[80vh] dark:border-gray-700">
                 <UserList
                     users={users}
                     currentUser={sessionId}
@@ -552,11 +551,11 @@ export function RtShare() {
                     isOnline={isOnline}
                     onSelect={selectUser}
                 />
-                <div className="chat-area">
+                <div className="flex flex-col flex-1 min-h-[60vh] overflow-y-auto">
                     {isConnecting ? (
-                        <div className="loading no-chat-selected">Connecting...</div>
+                        <div className="flex items-center justify-center h-full text-gray-600 dark:text-gray-400">Connecting...</div>
                     ) : error ? (
-                        <div className="error no-chat-selected"><p>Error: {error}</p></div>
+                        <div className="flex items-center justify-center h-full text-red-600 dark:text-red-400"><p>Error: {error}</p></div>
                     ) : selectedUser ? (
                         <Chat
                             currentUser={sessionId}
@@ -569,7 +568,7 @@ export function RtShare() {
                             onSendFile={file => handleSendFile(selectedUser, file)}
                         />
                     ) : (
-                        <div className="no-chat-selected"><p>Select a user to start chatting</p></div>
+                        <div className="flex items-center justify-center h-full text-gray-600 dark:text-gray-400"><p>Select a user to start chatting</p></div>
                     )}
                 </div>
             </div>
