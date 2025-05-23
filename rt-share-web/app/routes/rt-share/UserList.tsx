@@ -44,6 +44,8 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect 
                     .filter(u => u.id !== currentUser)
                     .filter(u => {
                         if (!localOnly) return true;
+                        console.log("myNetwork", myNetwork);
+                        console.log("u.ip", u.ip);
                         const otherNetwork = getNetworkPrefix(u.ip);
                         return myNetwork !== null && otherNetwork === myNetwork;
                     })
