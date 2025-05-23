@@ -1,6 +1,11 @@
 import { useState } from "react";
 import type { User } from "./types";
 
+function getNetworkPrefix(ip: string): string | null {
+    const parts = ip.split(".");
+    return parts.length === 4 ? parts.slice(0, 3).join(".") : null;
+}
+
 interface UserListProps {
     users: User[];
     currentUser: string;
@@ -14,6 +19,9 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect,
     const [localOnly, setLocalOnly] = useState(false);
 
     const myIp = users.find(u => u.id === currentUser)?.ip;
+    const myNetwork = myIp ? getNetworkPrefix(myIp) : null;
+
+    console.log(users, currentUser);
 
     const heading = !isOnline
         ? "Waiting for Connection"
@@ -36,7 +44,11 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect,
             <ul className="list-none p-0 m-0">
                 {users
                     .filter(u => u.id !== currentUser)
-                    .filter(u => !localOnly || (myIp && u.ip === myIp))
+                    .filter(u => {
+                        if (!localOnly) return true;
+                        const otherNetwork = getNetworkPrefix(u.ip);
+                        return myNetwork !== null && otherNetwork === myNetwork;
+                    })
                     .map(u => (
                         <li
                             key={u.id}
