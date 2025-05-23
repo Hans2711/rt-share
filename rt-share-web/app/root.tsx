@@ -53,8 +53,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </head>
             <body suppressHydrationWarning={true}>
                 {isLoading && (
-                    <div className="fixed inset-0 bg-white/80 dark:bg-black/70 flex justify-center items-center z-50">
-                        <div className="w-10 h-10 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin dark:border-gray-700 dark:border-t-sky-400"></div>
+                    <div className="fixed inset-0 bg-tertiary-light/80 dark:bg-secondary-dark/70 flex justify-center items-center z-50">
+                        <div className="w-10 h-10 border-4 border-tertiary-dark border-t-primary rounded-full animate-spin dark:border-secondary-light dark:border-t-primary-light"></div>
                     </div>
                 )}
                 <div style={{ display: isLoading ? 'none' : 'block' }}>

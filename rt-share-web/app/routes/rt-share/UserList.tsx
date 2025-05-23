@@ -21,15 +21,15 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect 
             : `Users (You are ${currentUser})`;
 
     return (
-        <div className="w-full bg-white border-b border-gray-300 overflow-y-auto md:w-[250px] md:border-b-0 md:border-r dark:bg-gray-900 dark:border-gray-700">
-            <h2 className="p-4 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-800 dark:border-gray-700">{heading}</h2>
-            <label className="w-full p-3 dark:border-gray-600 flex items-center justify-between gap-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700">
+        <div className="w-full bg-tertiary-light border-b border-tertiary-dark overflow-y-auto md:w-[250px] md:border-b-0 md:border-r dark:bg-secondary dark:border-secondary">
+            <h2 className="p-4 m-0 bg-tertiary border-b border-tertiary-dark dark:bg-secondary-light dark:border-secondary">{heading}</h2>
+            <label className="w-full p-3 dark:border-secondary flex items-center justify-between gap-2 cursor-pointer hover:bg-tertiary dark:hover:bg-secondary-light">
                 <span>Local Only</span>
                 <input
                     type="checkbox"
                     checked={localOnly}
                     onChange={() => setLocalOnly(v => !v)}
-                    className="form-checkbox h-5 w-5 text-blue-600"
+                    className="form-checkbox h-5 w-5 text-details-dark"
                 />
             </label>
             <ul className="list-none p-0 m-0">
@@ -39,7 +39,7 @@ export function UserList({ users, currentUser, selectedUser, isOnline, onSelect 
                     .map(u => (
                         <li
                             key={u.id}
-                            className={`p-3 cursor-pointer border-b border-gray-200 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-700 ${selectedUser === u.id ? "bg-gray-200 font-bold dark:bg-gray-800 dark:text-white" : ""} ${!u.isOnline ? "opacity-50" : ""}`}
+                            className={`p-3 cursor-pointer border-b border-tertiary-dark hover:bg-tertiary dark:border-secondary dark:hover:bg-secondary-light ${selectedUser === u.id ? "bg-tertiary-dark font-bold dark:bg-secondary-light dark:text-tertiary-light" : ""} ${!u.isOnline ? "opacity-50" : ""}`}
                             onClick={() => onSelect(u.id)}
                         >
                             {u.id} {!u.isOnline && "(Offline)"}
