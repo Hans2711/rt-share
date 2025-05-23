@@ -149,19 +149,20 @@ export function RtShare() {
                 console.log("Received event:", jEvent);
 
                 if (jEvent.type === "join" && jEvent.status === "ok") {
-                    const userList: string[] = JSON.parse(jEvent.data);
-                    setUsers(userList.map(id => ({ id, isOnline: true })));
-                    userList.forEach(uid => {
-                        if (uid !== storedSessionId) {
-                            createPeerConnection(uid);
+                    const userList: Array<{ id: string; ip: string }> = JSON.parse(jEvent.data);
+                    setUsers(userList.map(u => ({ ...u, isOnline: true })));
+                    userList.forEach(u => {
+                        if (u.id !== storedSessionId) {
+                            createPeerConnection(u.id);
                         }
                     });
                 } else if (jEvent.type === "join" && jEvent.status === "userJoin") {
                     const userID = jEvent.data;
+                    const ip = jEvent.ip;
                     setUsers(prev =>
                         prev.some(u => u.id === userID)
-                            ? prev.map(u => u.id === userID ? { ...u, isOnline: true } : u)
-                            : [...prev, { id: userID, isOnline: true }]
+                            ? prev.map(u => u.id === userID ? { ...u, isOnline: true, ip } : u)
+                            : [...prev, { id: userID, ip, isOnline: true }]
                     );
                     if (userID !== storedSessionId) {
                         createPeerConnection(userID);

@@ -8,16 +8,22 @@ import (
 	"time"
 )
 
-func (s *Server) getAllUserIDsJSON() string {
+type userInfo struct {
+	ID string `json:"id"`
+	IP string `json:"ip"`
+}
+
+func (s *Server) getAllUserInfoJSON() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	ids := make([]string, 0, len(s.users))
-	for id := range s.users {
-		ids = append(ids, id)
+	infos := make([]userInfo, 0, len(s.users))
+	for id, conn := range s.users {
+		ip := s.connIPs[conn]
+		infos = append(infos, userInfo{ID: id, IP: ip})
 	}
 
-	jsonBytes, err := json.Marshal(ids)
+	jsonBytes, err := json.Marshal(infos)
 	if err != nil {
 		return "[]"
 	}
@@ -35,6 +41,9 @@ func (s *Server) addUser(userID string, ws *websocket.Conn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.users[userID] = ws
+	if ip, ok := s.connIPs[ws]; ok {
+		s.userIPs[userID] = ip
+	}
 }
 
 func (s *Server) getSenderUID(ws *websocket.Conn) string {

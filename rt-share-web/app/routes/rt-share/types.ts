@@ -1,6 +1,7 @@
 // src/routes/rt-share/types.ts
 export interface User {
   id: string;
+  ip: string;
   isOnline: boolean;
 }
 
