@@ -2,6 +2,8 @@
 
 RT Share is a peer-to-peer file and text sharing application. It consists of a Go WebSocket server used for signalling and a React Router based front‑end that establishes direct WebRTC connections between browsers.
 
+The repository now also contains a React Native client located in `rt-share-native`.
+
 ## Features
 
 - **Real‑time user presence** – users join and leave the lobby via WebSocket and can see who is online.
@@ -27,4 +29,5 @@ RT Share is a peer-to-peer file and text sharing application. It consists of a G
 
 ---
 
-See [`rt-share-web/README.md`](rt-share-web/README.md) for details on running the front‑end.
+See [`rt-share-web/README.md`](rt-share-web/README.md) for details on running the web front‑end.
+See [`rt-share-native/README.md`](rt-share-native/README.md) for details on the React Native version.
