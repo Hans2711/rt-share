@@ -3,7 +3,7 @@ import type { User, Message } from "./types";
 import { Chat } from "./chat";
 import { UserList } from "./UserList";
 import { FileHistoryModal } from "./FileHistoryModal";
-import { generateSessionId, blobToBase64, base64ToBlob, base64SizeInBytes } from "./helpers";
+import { generateSessionId, blobToBase64, base64ToBlob, base64SizeInBytes, sanitizeText } from "./helpers";
 
 
 type PeerStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
@@ -293,9 +293,10 @@ export function RtShare() {
                 try { msg = JSON.parse(e.data); } catch { return; }
 
                 if (msg.type === "text") {
+                    const sanitized = sanitizeText(msg.text);
                     const newMessage: Message = {
                         id: Date.now().toString(),
-                        text: msg.text,
+                        text: sanitized,
                         sender: userId,
                         timestamp: new Date(),
                     };
@@ -540,11 +541,12 @@ export function RtShare() {
             return;
         }
         const channel = dataChannels.current[targetUser]!;
-        channel.send(JSON.stringify({ type: "text", text }));
+        const sanitized = sanitizeText(text);
+        channel.send(JSON.stringify({ type: "text", text: sanitized }));
 
         const newMessage: Message = {
             id: Date.now().toString(),
-            text,
+            text: sanitized,
             sender: sessionId,
             timestamp: new Date(),
         };

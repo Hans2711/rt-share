@@ -41,3 +41,8 @@ export function base64SizeInBytes(base64: string): number {
   const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
   return (base64.length * 3) / 4 - padding;
 }
+
+export function sanitizeText(text: string): string {
+  const doc = new DOMParser().parseFromString(text, "text/html");
+  return doc.body.textContent || "";
+}
