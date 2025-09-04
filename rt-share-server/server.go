@@ -30,9 +30,10 @@ func main() {
 	keyFile := "/etc/letsencrypt/live/rt-share.diesing.pro/privkey.pem"
 
 	// Set up TLS config for the server
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS13,
-	}
+    tlsConfig := &tls.Config{
+        // Allow TLS 1.2 for broader client compatibility
+        MinVersion: tls.VersionTLS12,
+    }
 
 	// Listen and serve with HTTPS (for wss)
 	server := &http.Server{

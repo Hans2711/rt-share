@@ -1,11 +1,11 @@
 package server
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"golang.org/x/net/websocket"
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "io"
+    "golang.org/x/net/websocket"
 )
 
 func (s *Server) readLoop(ws *websocket.Conn) {
@@ -57,7 +57,11 @@ func (s *Server) readLoop(ws *websocket.Conn) {
                 continue
             }
 
-            if _, err := ws.Write(resJSON); err != nil {
+            mu := s.getWriteMu(ws)
+            mu.Lock()
+            _, err = ws.Write(resJSON)
+            mu.Unlock()
+            if err != nil {
                 fmt.Println("Write error to", ws.RemoteAddr(), ":", err)
                 return
             }

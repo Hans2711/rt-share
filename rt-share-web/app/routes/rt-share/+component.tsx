@@ -14,6 +14,8 @@ export function RtShare() {
     const peerConns = useRef<Record<string, RTCPeerConnection>>({});
     const dataChannels = useRef<Record<string, RTCDataChannel>>({});
     const p2pFailCount = useRef<number>(0);
+    const reconnectAttempts = useRef<number>(0);
+    const reconnectTimer = useRef<number | null>(null);
 
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -165,25 +167,40 @@ export function RtShare() {
         }
         setSessionId(storedSessionId);
 
-        // Initialise WebSocket
-        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-            const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-            const wsHost = window.location.hostname;
+        const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+        const wsHost = window.location.hostname;
+
+        const clearReconnectTimer = () => {
+            if (reconnectTimer.current !== null) {
+                clearTimeout(reconnectTimer.current);
+                reconnectTimer.current = null;
+            }
+        };
+
+        const scheduleReconnect = () => {
+            // Exponential backoff with jitter, capped at 15s
+            const attempt = reconnectAttempts.current;
+            const base = 500; // ms
+            const delay = Math.min(15000, base * Math.pow(2, attempt)) + Math.floor(Math.random() * 400);
+            reconnectAttempts.current = Math.min(attempt + 1, 10);
+            clearReconnectTimer();
+            reconnectTimer.current = window.setTimeout(connect, delay);
+        };
+
+        const connect = () => {
+            if (wsRef.current &&
+                (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
             const socket = new WebSocket(`${wsProtocol}://${wsHost}:3000/`);
             wsRef.current = socket;
-
             setIsConnecting(true);
-
-            const connectionTimeout = setTimeout(() => {
-                if (socket.readyState !== WebSocket.OPEN) {
-                    setError("Connection timed out.");
-                    setIsConnecting(false);
-                    setTimeout(() => window.location.reload(), 3000);
-                }
-            }, 8000);
 
             socket.onopen = () => {
                 console.log("WebSocket connection established");
+                clearReconnectTimer();
+                reconnectAttempts.current = 0;
+                setError("");
                 setIsConnecting(false);
                 setIsOnline(true);
                 socket.send(JSON.stringify({ type: "join", payload: storedSessionId }) + "\n");
@@ -192,16 +209,20 @@ export function RtShare() {
             socket.addEventListener("error", (event) => {
                 setError("WebSocket connection error " + event);
                 setIsOnline(false);
-                setTimeout(() => window.location.reload(), 3000);
             });
 
             socket.onclose = () => {
                 setIsOnline(false);
                 cleanupPeerConnections();
+                scheduleReconnect();
             };
 
             socket.onmessage = (event) => {
                 const jEvent = JSON.parse(event.data);
+                if (jEvent.type === "heartbeat") {
+                    // no-op: server liveness ping
+                    return;
+                }
                 console.log("Received event:", jEvent);
 
                 if (jEvent.type === "join" && jEvent.status === "ok") {
@@ -229,12 +250,8 @@ export function RtShare() {
                     const userID = jEvent.data;
                     setUsers(prev => prev.map(u => u.id === userID ? { ...u, isOnline: false } : u));
                     updatePeerStatus(userID, "disconnected");
-                    try {
-                        dataChannels.current[userID]?.close();
-                    } catch {}
-                    try {
-                        peerConns.current[userID]?.close();
-                    } catch {}
+                    try { dataChannels.current[userID]?.close(); } catch {}
+                    try { peerConns.current[userID]?.close(); } catch {}
                     delete dataChannels.current[userID];
                     delete peerConns.current[userID];
                 } else if (jEvent.type === "offer" && jEvent.status === "forward") {
@@ -245,16 +262,22 @@ export function RtShare() {
                     handleCandidate(jEvent.sender, jEvent.data);
                 }
             };
+        };
 
-            return () => {
-                cleanupPeerConnections();
-                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        connect();
+
+        // Cleanup on unmount
+        return () => {
+            clearReconnectTimer();
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                try {
                     wsRef.current.send(JSON.stringify({ type: "leave", payload: storedSessionId }) + "\n");
-                    wsRef.current.close();
-                }
-                wsRef.current = null;
-            };
-        }
+                } catch {}
+                wsRef.current.close();
+            }
+            wsRef.current = null;
+            cleanupPeerConnections();
+        };
     }, []);
 
     const setupDataChannel = (userId: string, channel: RTCDataChannel) => {
@@ -656,8 +679,16 @@ export function RtShare() {
 
     useEffect(() => {
         const onOnline = () => {
+            // Try to re-establish the WS soon after network returns
             if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-                window.location.reload();
+                // Small jitter to avoid thundering herd
+                const delay = 200 + Math.floor(Math.random() * 400);
+                setTimeout(() => {
+                    try {
+                        // Trigger reconnect by closing any stale socket; main effect will reconnect
+                        wsRef.current?.close();
+                    } catch {}
+                }, delay);
             }
         };
         const onOffline = () => {

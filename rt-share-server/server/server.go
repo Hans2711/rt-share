@@ -1,12 +1,11 @@
 package server
 
 import (
-	"fmt"
-	"golang.org/x/net/websocket"
-	"net"
-	"strings"
-	"sync"
-	"time"
+    "fmt"
+    "golang.org/x/net/websocket"
+    "net"
+    "strings"
+    "sync"
 )
 
 // resolveAddrIP takes an address string and attempts to return the
@@ -67,20 +66,23 @@ func getClientIP(ws *websocket.Conn) string {
 }
 
 type Server struct {
-	conns   map[*websocket.Conn]bool
-	users   map[string]*websocket.Conn
-	userIPs map[string]string
-	connIPs map[*websocket.Conn]string
-	mu      sync.RWMutex
+    conns   map[*websocket.Conn]bool
+    users   map[string]*websocket.Conn
+    userIPs map[string]string
+    connIPs map[*websocket.Conn]string
+    // writeMu ensures only one goroutine writes to a given websocket at a time
+    writeMu map[*websocket.Conn]*sync.Mutex
+    mu      sync.RWMutex
 }
 
 func NewServer() *Server {
-	return &Server{
-		conns:   make(map[*websocket.Conn]bool),
-		users:   make(map[string]*websocket.Conn),
-		userIPs: make(map[string]string),
-		connIPs: make(map[*websocket.Conn]string),
-	}
+    return &Server{
+        conns:   make(map[*websocket.Conn]bool),
+        users:   make(map[string]*websocket.Conn),
+        userIPs: make(map[string]string),
+        connIPs: make(map[*websocket.Conn]string),
+        writeMu: make(map[*websocket.Conn]*sync.Mutex),
+    }
 }
 
 func (s *Server) removeConnection(ws *websocket.Conn) {
@@ -124,32 +126,33 @@ func (s *Server) removeConnection(ws *websocket.Conn) {
 }
 
 func (s *Server) addConnection(ws *websocket.Conn) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.conns[ws] = true
-	s.connIPs[ws] = getClientIP(ws)
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    s.conns[ws] = true
+    s.connIPs[ws] = getClientIP(ws)
+    // initialize per-connection write mutex
+    if _, ok := s.writeMu[ws]; !ok {
+        s.writeMu[ws] = &sync.Mutex{}
+    }
 }
 
 func WSHandler(s *Server) websocket.Handler {
-	return func(ws *websocket.Conn) {
-		// Check if this is a duplicate connection
-		if s.isActiveConnection(ws) {
-			fmt.Println("Duplicate connection from", ws.RemoteAddr())
-			ws.Close()
-			return
-		}
+    return func(ws *websocket.Conn) {
+        // Check if this is a duplicate connection
+        if s.isActiveConnection(ws) {
+            fmt.Println("Duplicate connection from", ws.RemoteAddr())
+            ws.Close()
+            return
+        }
 
-		fmt.Println("new incoming connection from client", ws.RemoteAddr())
-		s.addConnection(ws)
+        fmt.Println("new incoming connection from client", ws.RemoteAddr())
+        s.addConnection(ws)
 
-		// Set up connection tracking
-		ws.SetDeadline(time.Now().Add(5 * time.Minute))
+        defer func() {
+            fmt.Println("Connection cleanup for", ws.RemoteAddr())
+            s.removeConnection(ws)
+        }()
 
-		defer func() {
-			fmt.Println("Connection cleanup for", ws.RemoteAddr())
-			s.removeConnection(ws)
-		}()
-
-		s.readLoop(ws)
-	}
+        s.readLoop(ws)
+    }
 }

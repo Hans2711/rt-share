@@ -1,11 +1,12 @@
 package server
 
 import (
-	"encoding/json"
-	"fmt"
-	"golang.org/x/net/websocket"
-	"runtime/debug"
-	"time"
+    "encoding/json"
+    "fmt"
+    "golang.org/x/net/websocket"
+    "runtime/debug"
+    "sync"
+    "time"
 )
 
 type userInfo struct {
@@ -58,16 +59,33 @@ func (s *Server) getSenderUID(ws *websocket.Conn) string {
 }
 
 func (s *Server) isActiveConnection(ws *websocket.Conn) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.conns[ws]
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    return s.conns[ws]
+}
+
+// getWriteMu returns a per-connection mutex to serialize writes.
+func (s *Server) getWriteMu(ws *websocket.Conn) *sync.Mutex {
+    s.mu.RLock()
+    mu := s.writeMu[ws]
+    s.mu.RUnlock()
+    if mu != nil {
+        return mu
+    }
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    if mu = s.writeMu[ws]; mu == nil {
+        mu = &sync.Mutex{}
+        s.writeMu[ws] = mu
+    }
+    return mu
 }
 
 func (s *Server) safeRemoveConnection(ws *websocket.Conn) {
-	done := make(chan bool)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
+    done := make(chan bool)
+    go func() {
+        defer func() {
+            if r := recover(); r != nil {
 				fmt.Printf("PANIC in removeConnection: %v\nStack:\n%s\n",
 					r, debug.Stack())
 			}

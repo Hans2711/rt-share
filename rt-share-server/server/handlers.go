@@ -1,17 +1,17 @@
 package server
 
 import (
-	"encoding/json"
-	"fmt"
+    "encoding/json"
+    "fmt"
 
-	"golang.org/x/net/websocket"
+    "golang.org/x/net/websocket"
 )
 
 func (s *Server) handleJoin(r Request, ws *websocket.Conn) (Response, error) {
-	userID := r.Payload
-	s.addUser(userID, ws)
+    userID := r.Payload
+    s.addUser(userID, ws)
 
-	fmt.Println("User %s joined", userID)
+    fmt.Printf("User %s joined\n", userID)
 
 	ip := s.connIPs[ws]
 	s.broadcastResponse(Response{
@@ -52,15 +52,15 @@ func (s *Server) handleLeave(r Request, ws *websocket.Conn) (Response, error) {
 }
 
 func (s *Server) handleForward(r Request, ws *websocket.Conn) (Response, error) {
-	targetID := r.Payload
-	conn, exists := s.getUserConn(targetID)
-	if !exists {
-		return Response{
-			Type:    r.Type,
-			Status:  "error",
-			Message: "User not found",
-		}, nil
-	}
+    targetID := r.Payload
+    conn, exists := s.getUserConn(targetID)
+    if !exists {
+        return Response{
+            Type:    r.Type,
+            Status:  "error",
+            Message: "User not found",
+        }, nil
+    }
 
 	senderID := s.getSenderUID(ws)
 	msg := Response{
@@ -76,10 +76,14 @@ func (s *Server) handleForward(r Request, ws *websocket.Conn) (Response, error) 
 	}
 	jsonBytes = append(jsonBytes, '\n')
 
-	if _, err := conn.Write(jsonBytes); err != nil {
-		s.removeConnection(conn)
-		return Response{Type: r.Type, Status: "error", Message: "forward failed"}, nil
-	}
+    mu := s.getWriteMu(conn)
+    mu.Lock()
+    _, err = conn.Write(jsonBytes)
+    mu.Unlock()
+    if err != nil {
+        s.removeConnection(conn)
+        return Response{Type: r.Type, Status: "error", Message: "forward failed"}, nil
+    }
 
 	return Response{Type: r.Type, Status: "ok", Message: "forwarded"}, nil
 }
@@ -124,19 +128,23 @@ func (s *Server) broadcastResponse(res Response) {
 	}
 	s.mu.RUnlock()
 
-	// Process connections without holding the lock
-	for _, ws := range conns {
-		// Check if connection is still active
-		if !s.isActiveConnection(ws) {
-			continue
-		}
+    // Process connections without holding the lock
+    for _, ws := range conns {
+        // Check if connection is still active
+        if !s.isActiveConnection(ws) {
+            continue
+        }
 
-		// Write without spawning goroutines (they can cause races)
-		if _, err := ws.Write(resJSON); err != nil {
-			fmt.Println("Write error, removing connection:", ws.RemoteAddr())
-			s.removeConnection(ws)
-		}
-	}
+        // Serialize writes per connection to avoid races
+        mu := s.getWriteMu(ws)
+        mu.Lock()
+        _, err := ws.Write(resJSON)
+        mu.Unlock()
+        if err != nil {
+            fmt.Println("Write error, removing connection:", ws.RemoteAddr())
+            s.removeConnection(ws)
+        }
+    }
 }
 
 func (s *Server) safeBroadcast(res Response) {
