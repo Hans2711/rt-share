@@ -168,7 +168,10 @@ export function RtShare() {
         setSessionId(storedSessionId);
 
         const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-        const wsHost = window.location.hostname;
+        const isLocalHost = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(window.location.hostname);
+        // In production, use same-origin port (typically 443/80). In local dev, target :3000.
+        const wsPort = isLocalHost ? "3000" : (window.location.port || "");
+        const wsUrl = `${wsProtocol}://${window.location.hostname}${wsPort ? `:${wsPort}` : ""}/`;
 
         const clearReconnectTimer = () => {
             if (reconnectTimer.current !== null) {
@@ -192,7 +195,7 @@ export function RtShare() {
                 (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
                 return;
             }
-            const socket = new WebSocket(`${wsProtocol}://${wsHost}:3000/`);
+            const socket = new WebSocket(wsUrl);
             wsRef.current = socket;
             setIsConnecting(true);
 
