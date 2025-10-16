@@ -28,3 +28,14 @@ RT Share is a peer-to-peer file and text sharing application. It consists of a G
 ---
 
 See [`rt-share-web/README.md`](rt-share-web/README.md) for details on running the front‑end.
+
+## Server TLS configuration
+
+- Place a `config.json` in the project root (same folder as this README). See `config.example.json` for all supported fields.
+- Supported key layouts:
+  - `everything_file`: single PEM containing private key + certificate + chain (e.g. `ssl.everything`).
+  - `combined_file` + `key_file`: certificate + chain in one PEM and a separate private key (e.g. `ssl.combined` and `ssl.key`).
+  - `cert_file` + `key_file`: standard separate certificate and private key; optionally add `ca_file` to append intermediates.
+- Optional: `address` (default `:3000`) and `min_version` (`1.2` or `1.3`).
+
+At runtime the server looks for the config at `./config.json`, `../config.json`, or a path specified via `RT_SHARE_CONFIG`.

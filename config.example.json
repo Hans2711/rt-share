@@ -1,0 +1,12 @@
+{
+  "tls": {
+    "address": ":3000",
+    "min_version": "1.2",
+    "everything_file": "./ssl.everything",
+    "combined_file": "./ssl.combined",
+    "cert_file": "./ssl.cert",
+    "key_file": "./ssl.key",
+    "ca_file": "./ssl.ca"
+  }
+}
+
