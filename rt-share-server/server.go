@@ -73,6 +73,18 @@ func readConfig(path string) (*AppConfig, error) {
     return &cfg, nil
 }
 
+// resolvePath returns an absolute path when given an absolute input;
+// otherwise it resolves relative to baseDir.
+func resolvePath(baseDir, p string) string {
+    if p == "" {
+        return ""
+    }
+    if filepath.IsAbs(p) {
+        return p
+    }
+    return filepath.Clean(filepath.Join(baseDir, p))
+}
+
 func minTLSVersion(s string) uint16 {
     switch s {
     case "1.3", "TLS1.3", "tls1.3":
@@ -82,17 +94,17 @@ func minTLSVersion(s string) uint16 {
     }
 }
 
-func buildTLSConfig(t TLSSettings) (*tls.Config, error) {
+func buildTLSConfig(baseDir string, t TLSSettings) (*tls.Config, error) {
     var cert tls.Certificate
     var err error
 
     switch {
     case t.EverythingFile != "":
-        cert, err = loadFromEverything(t.EverythingFile, t.CAFile)
+        cert, err = loadFromEverything(resolvePath(baseDir, t.EverythingFile), resolvePath(baseDir, t.CAFile))
     case t.CombinedFile != "" && t.KeyFile != "":
-        cert, err = loadFromPair(t.CombinedFile, t.KeyFile, t.CAFile)
+        cert, err = loadFromPair(resolvePath(baseDir, t.CombinedFile), resolvePath(baseDir, t.KeyFile), resolvePath(baseDir, t.CAFile))
     case t.CertFile != "" && t.KeyFile != "":
-        cert, err = loadFromPair(t.CertFile, t.KeyFile, t.CAFile)
+        cert, err = loadFromPair(resolvePath(baseDir, t.CertFile), resolvePath(baseDir, t.KeyFile), resolvePath(baseDir, t.CAFile))
     default:
         err = errors.New("invalid TLS configuration: set either everything_file, or combined_file+key_file, or cert_file+key_file")
     }
@@ -187,7 +199,8 @@ func main() {
         log.Fatalf("failed to load config: %v", err)
     }
 
-    tlsConfig, err := buildTLSConfig(cfg.TLS)
+    cfgDir := filepath.Dir(cfgPath)
+    tlsConfig, err := buildTLSConfig(cfgDir, cfg.TLS)
     if err != nil {
         log.Fatalf("failed to load TLS material (from %s): %v", cfgPath, err)
     }
