@@ -1,6 +1,6 @@
 # RT Share
 
-RT Share is a peer-to-peer file and text sharing application. It consists of a Go WebSocket server used for signalling and a React Router based front‑end that establishes direct WebRTC connections between browsers.
+RT Share is a peer-to-peer file and text sharing application. It now uses a Node.js HTTPS server with built‑in WebSocket signaling and a React Router based front‑end that establishes direct WebRTC connections between browsers.
 
 ## Features
 
@@ -15,19 +15,19 @@ RT Share is a peer-to-peer file and text sharing application. It consists of a G
 ## Technologies Used
 
 ### Server
-- Go 1.24
-- `golang.org/x/net/websocket` for WebSocket handling
-- Secure TLS support for production (`ListenAndServeTLS`)
+- Node.js HTTPS server (ESM)
+- Minimal WebSocket (RFC 6455) implementation for signaling
+- Secure TLS support via `https.createServer`
 
 ### Web Client
-- React Router with server‑side rendering disabled
+- React Router with server‑side rendering enabled
 - TypeScript and Vite
 - WebRTC for peer connections
 - Tailwind CSS for styling
 
 ---
 
-See [`rt-share-web/README.md`](rt-share-web/README.md) for details on running the front‑end.
+See [`rt-share-web/README.md`](rt-share-web/README.md) for details on running the app.
 
 ## Server TLS configuration
 
@@ -38,4 +38,15 @@ See [`rt-share-web/README.md`](rt-share-web/README.md) for details on running th
   - `cert_file` + `key_file`: standard separate certificate and private key; optionally add `ca_file` to append intermediates.
 - Optional: `address` (default `:3000`) and `min_version` (`1.2` or `1.3`).
 
-At runtime the server looks for the config at `./config.json`, `../config.json`, or a path specified via `RT_SHARE_CONFIG`.
+At runtime the server looks for the config at `./config.json`, `../config.json`, or a path specified via `RT_SHARE_CONFIG` or `RTS_CONFIG`.
+
+## Running
+
+- Development (2 terminals):
+  - Terminal A: `cd rt-share-web && npm run dev` (Vite dev server)
+  - Terminal B: `cd rt-share-web && npm run dev:server` (plain HTTP WS signaling on `ws://localhost:3000` — no TLS/config needed)
+  - The dev server proxies WebSocket upgrades from `/ws` to the signaling server.
+- Production:
+  - `cd rt-share-web && npm run build`
+  - `cd rt-share-web && npm start`
+  - The HTTPS server serves SSR responses and handles WebSocket upgrades on `/ws`.

@@ -167,10 +167,9 @@ export function RtShare() {
         }
         setSessionId(storedSessionId);
 
+        // Derive WS URL from current location; server handles upgrades at /ws
         const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-        // Always target the websocket server on port 3000 (matches backend default)
-        const wsPort = "3000";
-        const wsUrl = `${wsProtocol}://${window.location.hostname}:${wsPort}/`;
+        const wsUrl = `${wsProtocol}://${window.location.host}/ws`;
 
         const clearReconnectTimer = () => {
             if (reconnectTimer.current !== null) {
