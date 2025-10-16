@@ -6,8 +6,11 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "dev:server": "RT_PLAIN_WS=1 node ./server/index.js",
-    "start": "NODE_ENV=Production node ./server/index.js",
-    "typecheck": "react-router typegen && tsc"
+    "typecheck": "react-router typegen && tsc",
+    "start": "NODE_ENV=Production forever start -a -l forever.log -o out.log -e err.log ./server/index.js",
+    "stop": "forever stopall",
+    "status": "forever list",
+    "logs": "forever logs"
   },
   "dependencies": {
     "@react-router/node": "^7.5.0",
