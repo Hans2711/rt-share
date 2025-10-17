@@ -722,7 +722,9 @@ export function RtShare() {
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         className="md:hidden absolute top-3 left-4 z-50 w-8 h-8 bg-rt-card rounded-lg flex items-center justify-center text-white shadow-lg border border-rt-text-gray/30"
                     >
-                        ☰
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
                     </button>
 
                     {/* Sidebar */}
