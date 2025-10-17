@@ -47,6 +47,15 @@ export function RtShare() {
         }
     }, []);
     const [showHistory, setShowHistory] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+
+    // Auto-open sidebar on mobile on initial load
+    useEffect(() => {
+        const isMobile = window.innerWidth < 768; // md breakpoint
+        if (isMobile && !selectedUser) {
+            setSidebarOpen(true);
+        }
+    }, [selectedUser]);
 
     const [peerStatuses, setPeerStatuses] = useState<Record<string, PeerStatus>>({});
 
@@ -705,33 +714,126 @@ export function RtShare() {
     }, []);
 
     return (
-        <div className="p-2 md:p-5 max-w-screen-xl mx-auto h-screen overflow-hidden">
-            <div className="flex flex-col h-full border border-gray-300 rounded-lg overflow-hidden md:flex-row md:h-[80vh] dark:border-gray-800">
-                <UserList
-                    users={users}
-                    currentUser={sessionId}
-                    selectedUser={selectedUser}
-                    isOnline={isOnline}
-                    onSelect={selectUser}
-                />
-                <div className="flex flex-col flex-1 min-h-[60vh] overflow-y-auto">
-                    {isConnecting ? (
-                        <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-300">Connecting...</div>
-                    ) : error ? (
-                        <div className="flex items-center justify-center h-full text-red-700 dark:text-red-800"><p>Error: {error}</p></div>
-                    ) : (
-                        <Chat
-                            currentUser={sessionId}
-                            targetUser={selectedUser}
-                            messages={selectedUser ? messages[selectedUser] || [] : []}
-                            sendInfo={{ progress: sendProgress, filename: sendFileInfo?.name, size: sendFileInfo?.size }}
-                            receiveInfo={{ progress: receiveProgress, filename: receiveFileInfo?.name, size: receiveFileInfo?.size }}
-                            connectionStatus={selectedUser ? peerStatuses[selectedUser] || "disconnected" : "disconnected"}
-                            onSendMessage={selectedUser ? (text => handleSendMessage(selectedUser, text)) : () => {}}
-                            onSendFile={selectedUser ? (file => handleSendFile(selectedUser, file)) : () => {}}
-                            onShowHistory={() => setShowHistory(true)}
+        <div className="min-h-screen bg-rt-dark p-2 md:p-4">
+            <div className="max-w-screen-xl mx-auto h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] rounded-xl md:rounded-2xl overflow-hidden bg-rt-dark">
+                <div className="flex h-full relative">
+                    {/* Mobile Menu Button */}
+                    <button
+                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                        className="md:hidden absolute top-3 left-4 z-50 w-8 h-8 bg-rt-card rounded-lg flex items-center justify-center text-white shadow-lg border border-rt-text-gray/30"
+                    >
+                        ☰
+                    </button>
+
+                    {/* Sidebar */}
+                    <div className={`${
+                        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                    } md:translate-x-0 fixed md:relative z-30 md:z-auto w-[280px] bg-rt-sidebar flex flex-col h-full transition-transform duration-300 ease-in-out`}>
+                        {/* Sidebar Header */}
+                        <div className="pr-4 pt-16 pb-4 md:p-6 border-b border-rt-card">
+                            <div className="flex items-center gap-3 pl-4 md:pl-0">
+                                <a 
+                                    href="https://github.com/Hans2711/rt-share" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-xl md:text-2xl font-bold text-white hover:text-rt-green transition-colors flex items-center gap-2"
+                                >
+                                    RT-Share
+                                    <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                </a>
+                            </div>
+                            <p className="text-rt-text-gray text-sm pl-4 md:pl-0 mt-2">Your ID: {sessionId}</p>
+                        </div>
+
+                        {/* Users Section */}
+                        <div className="p-4 md:p-6 flex-1">
+                            <h2 className="text-lg font-semibold text-white mb-4">Users</h2>
+                            <div className="space-y-3">
+                                {users
+                                    .filter(u => u.id !== sessionId)
+                                    .map(u => (
+                                        <div
+                                            key={u.id}
+                                            onClick={() => {
+                                                selectUser(u.id);
+                                                setSidebarOpen(false); // Close sidebar on mobile after selection
+                                            }}
+                                            className={`p-3 md:p-4 rounded-2xl cursor-pointer transition-colors ${
+                                                selectedUser === u.id
+                                                    ? 'bg-rt-card border border-rt-green'
+                                                    : 'bg-rt-card hover:bg-rt-card/80'
+                                            } ${!u.isOnline ? 'opacity-50' : ''}`}
+                                        >
+                                            <div className="text-white font-medium text-sm md:text-base">{u.id}</div>
+                                            <div className="flex items-center mt-2">
+                                                <div className={`w-2 h-2 rounded-full mr-2 ${
+                                                    u.isOnline ? 'bg-rt-green' : 'bg-rt-text-dark'
+                                                }`}></div>
+                                                <span className="text-rt-text-gray text-xs">
+                                                    {u.isOnline ? 'Online' : 'Offline'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                            </div>
+
+                            {/* Local Only Checkbox - Hidden on mobile for space */}
+                            <div className="hidden md:block mt-6">
+                                <label htmlFor="localOnly" className="flex items-center p-3 rounded-lg cursor-pointer hover:bg-rt-card/50 transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        id="localOnly"
+                                        className="w-4 h-4 rounded border-rt-text-gray bg-transparent checked:bg-rt-green focus:ring-rt-green mr-3"
+                                    />
+                                    <span className="text-rt-text-light text-sm">Local only</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* Files History Button */}
+                        <div className="px-4 py-4 md:px-6 md:py-5 border-t border-rt-card">
+                            <button
+                                onClick={() => {
+                                    setShowHistory(true);
+                                    setSidebarOpen(false); // Close sidebar on mobile
+                                }}
+                                className="w-full bg-rt-card hover:bg-rt-card/80 text-white py-3 px-4 rounded-2xl font-semibold transition-colors flex items-center justify-center"
+                            >
+                                📁 Files
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Mobile Overlay */}
+                    {sidebarOpen && (
+                        <div
+                            className="md:hidden fixed inset-0 bg-black/50 z-20"
+                            onClick={() => setSidebarOpen(false)}
                         />
                     )}
+
+                    {/* Chat Area */}
+                    <div className="flex-1 bg-rt-dark flex flex-col ml-0 md:ml-0">
+                        {isConnecting ? (
+                            <div className="flex items-center justify-center h-full text-rt-text-light">Connecting...</div>
+                        ) : error ? (
+                            <div className="flex items-center justify-center h-full text-red-400"><p>Error: {error}</p></div>
+                        ) : (
+                            <Chat
+                                currentUser={sessionId}
+                                targetUser={selectedUser}
+                                messages={selectedUser ? messages[selectedUser] || [] : []}
+                                sendInfo={{ progress: sendProgress, filename: sendFileInfo?.name, size: sendFileInfo?.size }}
+                                receiveInfo={{ progress: receiveProgress, filename: receiveFileInfo?.name, size: receiveFileInfo?.size }}
+                                connectionStatus={selectedUser ? peerStatuses[selectedUser] || "disconnected" : "disconnected"}
+                                onSendMessage={selectedUser ? (text => handleSendMessage(selectedUser, text)) : () => {}}
+                                onSendFile={selectedUser ? (file => handleSendFile(selectedUser, file)) : () => {}}
+                                onShowHistory={() => setShowHistory(true)}
+                            />
+                        )}
+                    </div>
                 </div>
             </div>
             {showHistory && (

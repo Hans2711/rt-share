@@ -3,10 +3,47 @@
 @theme {
     --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
         "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    --color-rt-dark: #0d0d0d;
+    --color-rt-sidebar: #141414;
+    --color-rt-card: #1f1f1f;
+    --color-rt-message-in: #262626;
+    --color-rt-message-out: #339933;
+    --color-rt-green: #33cc33;
+    --color-rt-green-dark: #339933;
+    --color-rt-text-gray: #b3b3b3;
+    --color-rt-text-light: #cccccc;
+    --color-rt-text-dark: #999999;
 }
 
 html,
 body {
-    @apply bg-gray-100 dark:bg-gray-900 dark:text-white;
+    background-color: var(--color-rt-dark);
+    color: white;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif,
+        "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+/* Custom progress bar styling */
+progress {
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: var(--color-rt-card);
+    border-radius: 0.5rem;
+    height: 0.5rem;
+}
+
+progress::-webkit-progress-bar {
+    background-color: var(--color-rt-card);
+    border-radius: 0.5rem;
+}
+
+progress::-webkit-progress-value {
+    background-color: var(--color-rt-green);
+    border-radius: 0.5rem;
+}
+
+progress::-moz-progress-bar {
+    background-color: var(--color-rt-green);
+    border-radius: 0.5rem;
 }
 

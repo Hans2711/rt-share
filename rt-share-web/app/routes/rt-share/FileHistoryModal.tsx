@@ -26,33 +26,49 @@ export function FileHistoryModal({ files, onClose }: FileHistoryModalProps) {
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded shadow w-full max-w-sm max-h-full overflow-y-auto p-4">
-                <h2 className="text-lg font-bold mb-2">Received Files</h2>
-                {files.length === 0 ? (
-                    <p className="text-sm">No files yet.</p>
-                ) : (
-                    <ul className="divide-y divide-gray-300 dark:divide-gray-700">
-                        {files.map((f, i) => (
-                            <li key={i} className="py-2 flex items-center justify-between gap-2">
-                                <span className="text-sm break-all flex-1">
-                                    {f.sender ? `${f.sender}: ` : ""}{f.filename}
-                                </span>
-                                <button
-                                    onClick={() => handleDownload(f)}
-                                    className="px-2 py-1 text-xs bg-green-500 text-white rounded"
-                                >
-                                    Download
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-                <button
-                    onClick={onClose}
-                    className="mt-4 w-full px-3 py-2 text-sm bg-gray-200 rounded dark:bg-gray-700 dark:text-gray-200"
-                >
-                    Close
-                </button>
+            <div className="bg-rt-sidebar rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden">
+                {/* Modal Header */}
+                <div className="px-6 py-5 border-b border-rt-card flex items-center justify-between">
+                    <h2 className="text-xl font-bold text-white">Files History</h2>
+                    <button
+                        onClick={onClose}
+                        className="w-8 h-8 rounded-xl bg-rt-card hover:bg-rt-card/80 flex items-center justify-center text-white text-xl transition-colors"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                {/* Files List */}
+                <div className="p-6 max-h-96 overflow-y-auto">
+                    {files.length === 0 ? (
+                        <p className="text-rt-text-light text-center py-8">No files yet.</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {files.map((f, i) => (
+                                <div key={i} className="bg-rt-card rounded-xl p-4">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <div className="text-white text-sm font-medium mb-1 break-all">
+                                                {f.filename}
+                                            </div>
+                                            <div className="text-rt-text-gray text-xs">
+                                                {f.sender ? `From ${f.sender}` : ""}
+                                                {f.sender && " • "}
+                                                {(f.blob.size / 1024 / 1024).toFixed(1)} MB
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleDownload(f)}
+                                            className="bg-rt-green-dark hover:bg-rt-green text-white px-3 py-2 rounded-lg font-medium text-sm transition-colors ml-3 flex-shrink-0"
+                                        >
+                                            ↓
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

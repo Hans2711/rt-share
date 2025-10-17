@@ -7,6 +7,21 @@ export default {
   content: ['./app/**/*.{js,ts,jsx,tsx}'],
     theme: {
         extend: {
+            colors: {
+                'rt-dark': 'var(--color-rt-dark)',
+                'rt-sidebar': 'var(--color-rt-sidebar)',
+                'rt-card': 'var(--color-rt-card)',
+                'rt-message-in': 'var(--color-rt-message-in)',
+                'rt-message-out': 'var(--color-rt-message-out)',
+                'rt-green': 'var(--color-rt-green)',
+                'rt-green-dark': 'var(--color-rt-green-dark)',
+                'rt-text-gray': 'var(--color-rt-text-gray)',
+                'rt-text-light': 'var(--color-rt-text-light)',
+                'rt-text-dark': 'var(--color-rt-text-dark)',
+            },
+            fontFamily: {
+                'inter': ['Inter', 'sans-serif'],
+            },
             /* container settings … */
             container: {
                 center: true,
