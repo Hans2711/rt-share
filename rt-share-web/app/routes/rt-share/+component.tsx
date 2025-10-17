@@ -13,9 +13,13 @@ export function RtShare() {
     const wsRef = useRef<WebSocket | null>(null);
     const peerConns = useRef<Record<string, RTCPeerConnection>>({});
     const dataChannels = useRef<Record<string, RTCDataChannel>>({});
-    const p2pFailCount = useRef<number>(0);
+    const p2pFailCount = useRef<Record<string, number>>({}); // Per-peer fail count instead of global
     const reconnectAttempts = useRef<number>(0);
     const reconnectTimer = useRef<number | null>(null);
+    const pendingIceCandidates = useRef<Record<string, RTCIceCandidateInit[]>>({}); // Queue candidates
+    const connectionTimeouts = useRef<Record<string, number>>({}); // Track connection timeouts
+    const fileReceiveTimeouts = useRef<Record<string, number>>({}); // Track file receive timeouts (2 min)
+    const fileSendTimeouts = useRef<Record<string, number>>({}); // Track file send timeouts (2 min)
 
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -149,8 +153,21 @@ export function RtShare() {
         Object.values(peerConns.current).forEach(pc => {
             try { pc.close(); } catch { /* ignore */ }
         });
+        Object.values(connectionTimeouts.current).forEach(timeoutId => {
+            clearTimeout(timeoutId);
+        });
+        Object.values(fileReceiveTimeouts.current).forEach(timeoutId => {
+            clearTimeout(timeoutId);
+        });
+        Object.values(fileSendTimeouts.current).forEach(timeoutId => {
+            clearTimeout(timeoutId);
+        });
         peerConns.current = {};
         dataChannels.current = {};
+        pendingIceCandidates.current = {};
+        connectionTimeouts.current = {};
+        fileReceiveTimeouts.current = {};
+        fileSendTimeouts.current = {};
         setPeerStatuses({});
     };
 
@@ -268,6 +285,20 @@ export function RtShare() {
                     try { peerConns.current[userID]?.close(); } catch {}
                     delete dataChannels.current[userID];
                     delete peerConns.current[userID];
+                    delete pendingIceCandidates.current[userID];
+                    delete p2pFailCount.current[userID];
+                    if (connectionTimeouts.current[userID]) {
+                        clearTimeout(connectionTimeouts.current[userID]);
+                        delete connectionTimeouts.current[userID];
+                    }
+                    if (fileReceiveTimeouts.current[userID]) {
+                        clearTimeout(fileReceiveTimeouts.current[userID]);
+                        delete fileReceiveTimeouts.current[userID];
+                    }
+                    if (fileSendTimeouts.current[userID]) {
+                        clearTimeout(fileSendTimeouts.current[userID]);
+                        delete fileSendTimeouts.current[userID];
+                    }
                 } else if (jEvent.type === "offer" && jEvent.status === "forward") {
                     handleOffer(jEvent.sender, jEvent.data);
                 } else if (jEvent.type === "answer" && jEvent.status === "forward") {
@@ -306,6 +337,11 @@ export function RtShare() {
                 if (pc) pc.close();
             } catch {}
             delete peerConns.current[userId];
+            delete pendingIceCandidates.current[userId];
+            if (connectionTimeouts.current[userId]) {
+                clearTimeout(connectionTimeouts.current[userId]);
+                delete connectionTimeouts.current[userId];
+            }
             const userOnline = usersRef.current.some(u => u.id === userId && u.isOnline);
             if (isOnlineRef.current && userOnline) {
                 updatePeerStatus(userId, "reconnecting");
@@ -363,6 +399,20 @@ export function RtShare() {
                     };
                     setReceiveFileInfo({ name: msg.filename, size: msg.size });
                     setReceiveProgress(0);
+                    
+                    // Start 2-minute timeout for file receive
+                    if (fileReceiveTimeouts.current[userId]) {
+                        clearTimeout(fileReceiveTimeouts.current[userId]);
+                    }
+                    fileReceiveTimeouts.current[userId] = window.setTimeout(() => {
+                        console.error(`File receive timeout for ${userId} - no chunks received in 2 minutes`);
+                        // Clean up the stalled transfer
+                        delete incomingFiles.current[userId]?.[msg.filename];
+                        setReceiveProgress(null);
+                        setReceiveFileInfo(null);
+                        delete fileReceiveTimeouts.current[userId];
+                        alert(`File transfer from ${userId} failed: Connection timeout (no data received for 2 minutes)`);
+                    }, 120000); // 2 minutes = 120000ms
                 } else if (msg.type === "file-accept") {
                     allowedRecipients.current[userId] = true;
                     const pending = pendingFiles.current[userId];
@@ -376,6 +426,12 @@ export function RtShare() {
                 } else if (msg.type === "file-end") {
                     const entry = incomingFiles.current[userId]?.[msg.filename];
                     if (!entry) return;
+
+                    // Clear the receive timeout since transfer completed
+                    if (fileReceiveTimeouts.current[userId]) {
+                        clearTimeout(fileReceiveTimeouts.current[userId]);
+                        delete fileReceiveTimeouts.current[userId];
+                    }
 
                     const blob = new Blob(entry.chunks);
                     const url = URL.createObjectURL(blob);
@@ -424,6 +480,20 @@ export function RtShare() {
                     current.chunks.push(ab);
                     current.received += ab.byteLength;
                     setReceiveProgress(Math.floor((current.received / current.size) * 100));
+                    
+                    // Reset the 2-minute timeout since we received a chunk
+                    if (fileReceiveTimeouts.current[userId]) {
+                        clearTimeout(fileReceiveTimeouts.current[userId]);
+                        const filename = Object.keys(files)[0];
+                        fileReceiveTimeouts.current[userId] = window.setTimeout(() => {
+                            console.error(`File receive timeout for ${userId} - no chunks received in 2 minutes`);
+                            delete incomingFiles.current[userId]?.[filename];
+                            setReceiveProgress(null);
+                            setReceiveFileInfo(null);
+                            delete fileReceiveTimeouts.current[userId];
+                            alert(`File transfer from ${userId} failed: Connection timeout (no data received for 2 minutes)`);
+                        }, 120000); // 2 minutes
+                    }
                 });
                 return;
             }
@@ -444,26 +514,73 @@ export function RtShare() {
         }));
         const pc = new RTCPeerConnection({
             iceServers: [
+                // Public STUN servers for NAT traversal
                 { urls: "stun:stun.l.google.com:19302" },
                 { urls: "stun:stun1.l.google.com:19302" },
                 { urls: "stun:stun2.l.google.com:19302" },
+                // Free public TURN servers for restrictive NATs/firewalls
+                // These allow relay connections when direct P2P fails
+                { 
+                    urls: "turn:openrelay.metered.ca:80",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                },
+                { 
+                    urls: "turn:openrelay.metered.ca:443",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                },
+                { 
+                    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                    username: "openrelayproject",
+                    credential: "openrelayproject"
+                }
             ],
+            // Improve connectivity in restrictive networks
+            iceCandidatePoolSize: 10,
+            iceTransportPolicy: "all" // Try all connection types
         });
         peerConns.current[userId] = pc;
+
+        // Set connection timeout (30 seconds)
+        connectionTimeouts.current[userId] = window.setTimeout(() => {
+            if (pc.connectionState !== "connected") {
+                console.warn(`Connection timeout for ${userId}, attempting ICE restart`);
+                // Try ICE restart
+                if (pc.connectionState !== "closed") {
+                    createPeerConnection(userId, true); // Force reinitiation
+                }
+            }
+        }, 30000);
+
+        // Initialize pending ICE candidates queue
+        pendingIceCandidates.current[userId] = [];
 
         pc.onconnectionstatechange = () => {
             if (pc.connectionState === "connected") {
                 updatePeerStatus(userId, "connected");
+                p2pFailCount.current[userId] = 0; // Reset fail count on successful connection
+                // Clear connection timeout
+                if (connectionTimeouts.current[userId]) {
+                    clearTimeout(connectionTimeouts.current[userId]);
+                    delete connectionTimeouts.current[userId];
+                }
             } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-                p2pFailCount.current += 1;
-                if (p2pFailCount.current >= 10) {
-                    window.location.reload();
+                p2pFailCount.current[userId] = (p2pFailCount.current[userId] || 0) + 1;
+                if (p2pFailCount.current[userId] >= 5) {
+                    console.error(`Peer ${userId} failed ${p2pFailCount.current[userId]} times. Giving up.`);
+                    updatePeerStatus(userId, "disconnected");
                     return;
                 }
                 console.warn("Peer connection dropped", userId);
                 try { pc.close(); } catch {}
                 delete peerConns.current[userId];
                 delete dataChannels.current[userId];
+                delete pendingIceCandidates.current[userId];
+                if (connectionTimeouts.current[userId]) {
+                    clearTimeout(connectionTimeouts.current[userId]);
+                    delete connectionTimeouts.current[userId];
+                }
                 const userOnline = usersRef.current.some(u => u.id === userId && u.isOnline);
                 if (isOnlineRef.current && userOnline) {
                     updatePeerStatus(userId, "reconnecting");
@@ -487,7 +604,31 @@ export function RtShare() {
                     payload: userId,
                     text: JSON.stringify(e.candidate),
                 }) + "\n");
+            } else if (!e.candidate) {
+                console.log(`ICE gathering complete for ${userId}`);
             }
+        };
+
+        // Monitor ICE connection state for better diagnostics
+        pc.oniceconnectionstatechange = () => {
+            console.log(`ICE connection state for ${userId}: ${pc.iceConnectionState}`);
+            if (pc.iceConnectionState === "failed") {
+                console.warn(`ICE connection failed for ${userId}, attempting restart`);
+                // Attempt ICE restart
+                if (pc.connectionState !== "closed" && sessionId > userId) {
+                    setTimeout(() => {
+                        if (pc.connectionState !== "connected") {
+                            console.log(`Initiating ICE restart for ${userId}`);
+                            pc.restartIce();
+                        }
+                    }, 1000);
+                }
+            }
+        };
+
+        // Monitor ICE gathering state
+        pc.onicegatheringstatechange = () => {
+            console.log(`ICE gathering state for ${userId}: ${pc.iceGatheringState}`);
         };
 
         pc.ondatachannel = e => setupDataChannel(userId, e.channel);
@@ -510,14 +651,33 @@ export function RtShare() {
     };
 
     const handleOffer = (userId: string, data: string) => {
+        const existingPc = peerConns.current[userId];
+        
+        // Handle offer glare: if we're already in a non-stable state, decide who backs off
+        if (existingPc && existingPc.signalingState !== "stable") {
+            console.warn(`Offer glare detected with ${userId}. Our state: ${existingPc.signalingState}`);
+            // Use deterministic tiebreaker: lower ID backs off
+            if (sessionId < userId) {
+                console.log(`Backing off from offer glare (our ID is lower)`);
+                return;
+            } else {
+                console.log(`Proceeding with offer (their ID is lower), closing existing connection`);
+                try { existingPc.close(); } catch {}
+                delete peerConns.current[userId];
+                delete dataChannels.current[userId];
+            }
+        }
+        
         createPeerConnection(userId, false);
         const pc = peerConns.current[userId];
-        if (!pc || pc.signalingState !== "stable") {
-            console.warn("Ignoring unexpected offer in state", pc?.signalingState);
-            return;
-        }
+        if (!pc) return;
+        
         pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)))
-          .then(() => pc.createAnswer())
+          .then(() => {
+              // Process any queued ICE candidates after remote description is set
+              processPendingCandidates(userId);
+              return pc.createAnswer();
+          })
           .then(a => pc.setLocalDescription(a))
           .then(() => {
               if (wsRef.current && pc.localDescription) {
@@ -527,19 +687,61 @@ export function RtShare() {
                       text: JSON.stringify(pc.localDescription),
                   }) + "\n");
               }
+          })
+          .catch(err => {
+              console.error(`Failed to handle offer from ${userId}:`, err);
+              updatePeerStatus(userId, "disconnected");
           });
     };
 
     const handleAnswer = (userId: string, data: string) => {
         const pc = peerConns.current[userId];
         if (pc && pc.signalingState === "have-local-offer") {
-            pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)));
+            pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)))
+              .then(() => {
+                  // Process any queued ICE candidates after remote description is set
+                  processPendingCandidates(userId);
+              })
+              .catch(err => {
+                  console.error(`Failed to set remote description for ${userId}:`, err);
+              });
         }
     };
 
     const handleCandidate = (userId: string, data: string) => {
         const pc = peerConns.current[userId];
-        if (pc) pc.addIceCandidate(new RTCIceCandidate(JSON.parse(data)));
+        if (!pc) return;
+        
+        const candidate = JSON.parse(data);
+        
+        // Queue candidates if remote description not set yet
+        if (!pc.remoteDescription) {
+            console.log(`Queueing ICE candidate for ${userId} (remote description not set)`);
+            pendingIceCandidates.current[userId] = pendingIceCandidates.current[userId] || [];
+            pendingIceCandidates.current[userId].push(candidate);
+            return;
+        }
+        
+        // Add candidate immediately if remote description is set
+        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => {
+            console.error(`Failed to add ICE candidate for ${userId}:`, err);
+        });
+    };
+
+    const processPendingCandidates = (userId: string) => {
+        const pc = peerConns.current[userId];
+        const pending = pendingIceCandidates.current[userId];
+        
+        if (!pc || !pending || pending.length === 0) return;
+        
+        console.log(`Processing ${pending.length} queued ICE candidates for ${userId}`);
+        pending.forEach(candidate => {
+            pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(err => {
+                console.error(`Failed to add queued ICE candidate for ${userId}:`, err);
+            });
+        });
+        
+        pendingIceCandidates.current[userId] = [];
     };
 
     const ensureConnection = (userId: string) => {
@@ -608,6 +810,25 @@ export function RtShare() {
         const MAX_BUFFERED = 16 * 1024 * 1024; // 16 MiB
         channel.bufferedAmountLowThreshold = 4 * 1024 * 1024; // 4 MiB
 
+        // Setup send timeout monitoring
+        let sendTimeoutId: number | null = null;
+        const resetSendTimeout = () => {
+            if (sendTimeoutId) clearTimeout(sendTimeoutId);
+            sendTimeoutId = window.setTimeout(() => {
+                console.error(`File send timeout for ${targetUser} - no chunks sent in 2 minutes`);
+                setSendProgress(null);
+                setSendFileInfo(null);
+                alert(`File transfer to ${targetUser} failed: Connection timeout (no data sent for 2 minutes)`);
+            }, 120000); // 2 minutes
+        };
+
+        const clearSendTimeout = () => {
+            if (sendTimeoutId) {
+                clearTimeout(sendTimeoutId);
+                sendTimeoutId = null;
+            }
+        };
+
         const waitForDrain = () =>
             new Promise<void>(resolve => {
                 if (channel.bufferedAmount <= channel.bufferedAmountLowThreshold) {
@@ -628,6 +849,7 @@ export function RtShare() {
         // 2 — stream and throttle
         let sent = 0;
         setSendProgress(0);
+        resetSendTimeout(); // Start timeout monitoring
 
         const reader = file.stream().getReader();
         while (true) {
@@ -644,10 +866,13 @@ export function RtShare() {
 
                 try {
                     channel.send(chunk);
+                    resetSendTimeout(); // Reset timeout on successful chunk send
                 } catch (err) {
                     console.error("Failed to send chunk:", err);
+                    clearSendTimeout();
                     alert("File transfer aborted.");
                     setSendProgress(null);
+                    setSendFileInfo(null);
                     return;
                 }
 
@@ -658,6 +883,7 @@ export function RtShare() {
         }
 
         // 3 — finish
+        clearSendTimeout(); // Clear timeout on completion
         channel.send(JSON.stringify({ type: "file-end", filename: file.name }));
         setSendProgress(null);
         setSendFileInfo(null);
