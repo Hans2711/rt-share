@@ -67,10 +67,42 @@ export function Chat({
                     <h2 className="text-lg md:text-xl font-semibold text-white">
                         {targetUser ? `Chat with ${targetUser}` : "Chat"}
                     </h2>
-                    {targetUser && connectionStatus === "connected" && (
-                        <div className="bg-green-800/30 rounded-full px-3 py-1.5 flex items-center gap-2">
-                            <div className="w-2 h-2 bg-rt-green rounded-full"></div>
-                            <span className="text-rt-green text-sm font-medium">Connected</span>
+                    {targetUser && (
+                        <div className={`rounded-full px-3 py-1.5 flex items-center gap-2 ${
+                            connectionStatus === "connected"
+                                ? "bg-green-800/30"
+                                : connectionStatus === "connecting"
+                                ? "bg-amber-800/30"
+                                : connectionStatus === "reconnecting"
+                                ? "bg-amber-800/30"
+                                : "bg-red-800/30"
+                        }`}>
+                            <div className={`w-2 h-2 rounded-full ${
+                                connectionStatus === "connected"
+                                    ? "bg-rt-green"
+                                    : connectionStatus === "connecting"
+                                    ? "bg-amber-500"
+                                    : connectionStatus === "reconnecting"
+                                    ? "bg-amber-500 animate-pulse"
+                                    : "bg-red-500"
+                            }`}></div>
+                            <span className={`text-sm font-medium ${
+                                connectionStatus === "connected"
+                                    ? "text-rt-green"
+                                    : connectionStatus === "connecting"
+                                    ? "text-amber-500"
+                                    : connectionStatus === "reconnecting"
+                                    ? "text-amber-500"
+                                    : "text-red-500"
+                            }`}>
+                                {connectionStatus === "connected"
+                                    ? "Connected"
+                                    : connectionStatus === "reconnecting"
+                                    ? "Reconnecting..."
+                                    : connectionStatus === "connecting"
+                                    ? "Connecting..."
+                                    : "Disconnected"}
+                            </span>
                         </div>
                     )}
                 </div>

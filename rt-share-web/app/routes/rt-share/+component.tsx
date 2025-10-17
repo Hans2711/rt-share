@@ -161,10 +161,14 @@ export function RtShare() {
             updatePeerStatus(uid, "disconnected");
             return;
         }
-        updatePeerStatus(uid, "connecting");
-        // Determine the initiator deterministically to avoid offer glare
-        const shouldInitiate = sessionId > uid;
-        createPeerConnection(uid, shouldInitiate);
+        
+        // Only create a new connection if one doesn't already exist
+        if (!peerConns.current[uid]) {
+            updatePeerStatus(uid, "connecting");
+            // Determine the initiator deterministically to avoid offer glare
+            const shouldInitiate = sessionId > uid;
+            createPeerConnection(uid, shouldInitiate);
+        }
     };
 
     useEffect(() => {
@@ -755,30 +759,53 @@ export function RtShare() {
                             <div className="space-y-3">
                                 {users
                                     .filter(u => u.id !== sessionId)
-                                    .map(u => (
-                                        <div
-                                            key={u.id}
-                                            onClick={() => {
-                                                selectUser(u.id);
-                                                setSidebarOpen(false); // Close sidebar on mobile after selection
-                                            }}
-                                            className={`p-3 md:p-4 rounded-2xl cursor-pointer transition-colors ${
-                                                selectedUser === u.id
-                                                    ? 'bg-rt-card border border-rt-green'
-                                                    : 'bg-rt-card hover:bg-rt-card/80'
-                                            } ${!u.isOnline ? 'opacity-50' : ''}`}
-                                        >
-                                            <div className="text-white font-medium text-sm md:text-base">{u.id}</div>
-                                            <div className="flex items-center mt-2">
-                                                <div className={`w-2 h-2 rounded-full mr-2 ${
-                                                    u.isOnline ? 'bg-rt-green' : 'bg-rt-text-dark'
-                                                }`}></div>
-                                                <span className="text-rt-text-gray text-xs">
-                                                    {u.isOnline ? 'Online' : 'Offline'}
-                                                </span>
+                                    .map(u => {
+                                        const connectionStatus = peerStatuses[u.id] || "disconnected";
+                                        return (
+                                            <div
+                                                key={u.id}
+                                                onClick={() => {
+                                                    selectUser(u.id);
+                                                    setSidebarOpen(false); // Close sidebar on mobile after selection
+                                                }}
+                                                className={`p-3 md:p-4 rounded-2xl cursor-pointer transition-colors ${
+                                                    selectedUser === u.id
+                                                        ? 'bg-rt-card border border-rt-green'
+                                                        : 'bg-rt-card hover:bg-rt-card/80'
+                                                } ${!u.isOnline ? 'opacity-50' : ''}`}
+                                            >
+                                                <div className="text-white font-medium text-sm md:text-base">{u.id}</div>
+                                                <div className="flex items-center gap-3 mt-2">
+                                                    {/* Online Status */}
+                                                    <div className="flex items-center">
+                                                        <div className={`w-2 h-2 rounded-full mr-2 ${
+                                                            u.isOnline ? 'bg-rt-green' : 'bg-rt-text-dark'
+                                                        }`}></div>
+                                                        <span className="text-rt-text-gray text-xs">
+                                                            {u.isOnline ? 'Online' : 'Offline'}
+                                                        </span>
+                                                    </div>
+                                                    {/* Connected Status */}
+                                                    {u.isOnline && (
+                                                        <div className="flex items-center">
+                                                            <div className={`w-2 h-2 rounded-full mr-2 ${
+                                                                connectionStatus === 'connected' ? 'bg-blue-500' :
+                                                                connectionStatus === 'connecting' ? 'bg-yellow-500' :
+                                                                connectionStatus === 'reconnecting' ? 'bg-orange-500' :
+                                                                'bg-rt-text-dark'
+                                                            }`}></div>
+                                                            <span className="text-rt-text-gray text-xs capitalize">
+                                                                {connectionStatus === 'connected' ? 'Connected' :
+                                                                 connectionStatus === 'connecting' ? 'Connecting' :
+                                                                 connectionStatus === 'reconnecting' ? 'Reconnecting' :
+                                                                 'Disconnected'}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                             </div>
 
                             {/* Local Only Checkbox - Hidden on mobile for space */}
