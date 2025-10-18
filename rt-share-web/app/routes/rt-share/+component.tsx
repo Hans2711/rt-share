@@ -34,6 +34,8 @@ export function RtShare() {
     const [receiveFileInfo, setReceiveFileInfo] = useState<{ name: string; size: number } | null>(null);
 
     const [receivedFiles, setReceivedFiles] = useState<Record<string, { filename: string; blob: Blob }[]>>({});
+    // Track intentional shutdowns to prevent auto-reconnect during unload/freeze
+    const isShuttingDownRef = useRef(false);
     useEffect(() => {
         try {
             const raw = localStorage.getItem("receivedFileHistory");
@@ -218,6 +220,9 @@ export function RtShare() {
             reconnectTimer.current = window.setTimeout(connect, delay);
         };
 
+        // One-shot guard to avoid sending multiple leave messages
+        const didNotifyLeave = { value: false };
+
         const connect = () => {
             if (wsRef.current &&
                 (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
@@ -234,6 +239,9 @@ export function RtShare() {
                 setError("");
                 setIsConnecting(false);
                 setIsOnline(true);
+                // Reset shutdown + allow subsequent leave notifications
+                isShuttingDownRef.current = false;
+                didNotifyLeave.value = false;
                 socket.send(JSON.stringify({ type: "join", payload: storedSessionId }) + "\n");
             };
 
@@ -245,7 +253,9 @@ export function RtShare() {
             socket.onclose = () => {
                 setIsOnline(false);
                 cleanupPeerConnections();
-                scheduleReconnect();
+                if (!isShuttingDownRef.current) {
+                    scheduleReconnect();
+                }
             };
 
             socket.onmessage = (event) => {
@@ -312,10 +322,12 @@ export function RtShare() {
         connect();
 
         // Proactively announce leave on tab close/freeze/unload
-        const didNotifyLeave = { value: false };
         const notifyLeave = () => {
             if (didNotifyLeave.value) return;
             didNotifyLeave.value = true;
+            isShuttingDownRef.current = true;
+            // Ensure any pending reconnect is cancelled
+            try { clearReconnectTimer(); } catch {}
             try {
                 if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                     try { wsRef.current.send(JSON.stringify({ type: "leave", payload: storedSessionId }) + "\n"); } catch {}
@@ -339,6 +351,26 @@ export function RtShare() {
         window.addEventListener("beforeunload", onBeforeUnload);
         // `freeze` is not universally supported but harmless if no-op
         document.addEventListener("freeze", onFreeze as any);
+        // Rejoin after BFCache restore or when page is shown again
+        const onPageShow = () => {
+            // Allow rejoin after intentional leave
+            isShuttingDownRef.current = false;
+            if (!wsRef.current || (wsRef.current.readyState !== WebSocket.OPEN && wsRef.current.readyState !== WebSocket.CONNECTING)) {
+                connect();
+            }
+        };
+        window.addEventListener("pageshow", onPageShow);
+
+        // Rejoin when tab becomes visible again (covers freeze → resume in many browsers)
+        const onVisibilityChange = () => {
+            if (document.visibilityState === "visible") {
+                isShuttingDownRef.current = false;
+                if (!wsRef.current || (wsRef.current.readyState !== WebSocket.OPEN && wsRef.current.readyState !== WebSocket.CONNECTING)) {
+                    connect();
+                }
+            }
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange);
 
         // Cleanup on unmount
         return () => {
@@ -346,8 +378,12 @@ export function RtShare() {
                 window.removeEventListener("pagehide", onPageHide);
                 window.removeEventListener("beforeunload", onBeforeUnload);
                 document.removeEventListener("freeze", onFreeze as any);
+                window.removeEventListener("pageshow", onPageShow);
+                document.removeEventListener("visibilitychange", onVisibilityChange);
             } catch {}
             clearReconnectTimer();
+            // Mark shutdown to avoid spurious reconnect on unmount
+            isShuttingDownRef.current = true;
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                 try {
                     wsRef.current.send(JSON.stringify({ type: "leave", payload: storedSessionId }) + "\n");
