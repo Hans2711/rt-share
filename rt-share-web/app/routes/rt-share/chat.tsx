@@ -35,10 +35,11 @@ export function Chat({
 }: ChatProps) {
     const [messageInput, setMessageInput] = useState("");
     const [menuOpen, setMenuOpen] = useState(false);
+    const canInteract = Boolean(targetUser && connectionStatus === "connected");
 
     const handleSendMessage = () => {
         const text = messageInput.trim();
-        if (!targetUser || !text) return;
+        if (!targetUser || connectionStatus !== "connected" || !text) return;
         console.log(text);
         onSendMessage(text);
         setMessageInput("");
@@ -46,7 +47,7 @@ export function Chat({
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!targetUser || !file) return;
+        if (!targetUser || connectionStatus !== "connected" || !file) return;
         console.log("Sending File", file);
         onSendFile(file);
         e.target.value = ""; // Reset file input
@@ -183,12 +184,12 @@ export function Chat({
                         onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                         placeholder="Type a message..."
                         className="flex-1 bg-rt-card text-white placeholder-rt-text-gray rounded-2xl px-4 py-3 text-sm border-none focus:outline-none focus:ring-2 focus:ring-rt-green"
-                        disabled={!targetUser}
+                        disabled={!canInteract}
                     />
                     <div className="flex gap-3">
                         <button
                             onClick={handleSendMessage}
-                            disabled={!targetUser}
+                            disabled={!canInteract}
                             className="flex-1 md:flex-none bg-rt-green-dark hover:bg-rt-green text-white px-4 md:px-6 py-3 rounded-2xl font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base"
                         >
                             Send
@@ -196,7 +197,7 @@ export function Chat({
                         <label
                             htmlFor="file"
                             className={`flex-1 md:flex-none bg-rt-green-dark hover:bg-rt-green text-white px-4 md:px-6 py-3 rounded-2xl font-semibold cursor-pointer transition-colors flex items-center justify-center text-sm md:text-base ${
-                                !targetUser ? 'opacity-50 cursor-not-allowed' : ''
+                                !canInteract ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
                             }`}
                         >
                             Send File
@@ -207,7 +208,7 @@ export function Chat({
                             id="file"
                             onChange={handleFileChange}
                             className="hidden"
-                            disabled={!targetUser}
+                            disabled={!canInteract}
                         />
                     </div>
                 </div>
