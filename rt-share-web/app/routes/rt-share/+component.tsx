@@ -311,8 +311,42 @@ export function RtShare() {
 
         connect();
 
+        // Proactively announce leave on tab close/freeze/unload
+        const didNotifyLeave = { value: false };
+        const notifyLeave = () => {
+            if (didNotifyLeave.value) return;
+            didNotifyLeave.value = true;
+            try {
+                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                    try { wsRef.current.send(JSON.stringify({ type: "leave", payload: storedSessionId }) + "\n"); } catch {}
+                    try { wsRef.current.close(); } catch {}
+                } else if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING)) {
+                    // If still connecting, just close to ensure server-side cleanup
+                    try { wsRef.current.close(); } catch {}
+                }
+            } catch {}
+            // Also ensure local peer connections are torn down
+            try { cleanupPeerConnections(); } catch {}
+        };
+
+        // Use pagehide for navigation/unload and BFCache cases, plus beforeunload as a fallback.
+        const onPageHide = () => notifyLeave();
+        const onBeforeUnload = () => notifyLeave();
+        // Page Lifecycle freeze event where supported
+        const onFreeze = () => notifyLeave();
+
+        window.addEventListener("pagehide", onPageHide);
+        window.addEventListener("beforeunload", onBeforeUnload);
+        // `freeze` is not universally supported but harmless if no-op
+        document.addEventListener("freeze", onFreeze as any);
+
         // Cleanup on unmount
         return () => {
+            try {
+                window.removeEventListener("pagehide", onPageHide);
+                window.removeEventListener("beforeunload", onBeforeUnload);
+                document.removeEventListener("freeze", onFreeze as any);
+            } catch {}
             clearReconnectTimer();
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                 try {
