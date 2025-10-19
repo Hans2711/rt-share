@@ -1,49 +1,5 @@
-function detectDeviceLabel(): string {
-  try {
-    // Prefer UA Client Hints where available
-    const nav: any = typeof navigator !== 'undefined' ? navigator : {};
-    const ua: string = String(nav.userAgent || '');
-    const platform: string = String(nav.userAgentData?.platform || nav.platform || '');
-
-    // iPad detection on iPadOS 13+ (reports as Macintosh)
-    const isIpadLike = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && typeof nav.maxTouchPoints === 'number' && nav.maxTouchPoints > 1);
-    if (/iPhone/i.test(ua)) return 'iPhone';
-    if (isIpadLike) return 'iPad';
-
-    // Android phone/tablet (keep generic "Android")
-    if (/Android/i.test(ua)) return 'Android';
-
-    // Desktop platforms
-    if (/Windows/i.test(ua) || /Win/i.test(platform)) return 'Windows';
-    if (/CrOS/i.test(ua) || /Chrome\s?OS/i.test(platform)) return 'ChromeOS';
-    if (/Mac OS X|Macintosh|MacIntel/i.test(ua) || /Mac/i.test(platform)) return 'Mac';
-    if (/Linux/i.test(ua) || /Linux/i.test(platform)) return 'Linux';
-
-    return 'Device';
-  } catch {
-    return 'Device';
-  }
-}
-
-function randomLetters(count: number): string {
-  const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  if (typeof crypto !== 'undefined' && (crypto as any).getRandomValues) {
-    const buf = new Uint8Array(count);
-    crypto.getRandomValues(buf);
-    return Array.from(buf, b => alpha[b % 26]).join('');
-  }
-  let s = '';
-  for (let i = 0; i < count; i++) {
-    s += alpha[Math.floor(Math.random() * 26)];
-  }
-  return s;
-}
-
 export function generateSessionId() {
-  // Compose a recognizable ID: <DeviceType>-<AA>
-  const label = detectDeviceLabel();
-  const suffix = randomLetters(2);
-  return `${label}-${suffix}`;
+  return Math.floor(10000 + Math.random() * 90000).toString();
 }
 
 export function formatBytes(bytes: number): string {

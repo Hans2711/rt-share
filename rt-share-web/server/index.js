@@ -1,5 +1,4 @@
 import path from 'node:path';
-import fs from 'node:fs';
 import { Buffer } from 'node:buffer';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequestHandler } from 'react-router';
@@ -10,7 +9,6 @@ const __dirname = path.dirname(__filename);
 const WEB_DIR = path.resolve(__dirname, '..');
 const BUILD_SERVER_PATH = path.resolve(WEB_DIR, 'build/server/index.js');
 const BUILD_CLIENT_DIR = path.resolve(WEB_DIR, 'build/client');
-const BUILD_CLIENT_ASSETS_DIR = path.join(BUILD_CLIENT_DIR, 'assets');
 
 async function readJSON(file) {
   const fileObj = Bun.file(file);
@@ -30,7 +28,7 @@ async function loadConfig() {
   const envPath = env.RT_SHARE_CONFIG || env.RTS_CONFIG;
   const candidates = [];
   if (envPath) candidates.push(envPath);
-  const cwd = (typeof Bun?.cwd === 'function') ? Bun.cwd() : (Bun?.cwd || process.cwd());
+  const cwd = Bun.cwd();
   candidates.push(path.resolve(cwd, 'config.json'));
   candidates.push(path.resolve(cwd, '..', 'config.json'));
   candidates.push(path.resolve(__dirname, 'config.json'));
@@ -143,7 +141,7 @@ async function tryServeStatic(req) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return null;
   const url = new URL(req.url);
   const pathname = decodeURIComponent(url.pathname);
-  if (!pathname.startsWith('/assets/') && pathname !== '/favicon.ico' && !pathname.startsWith('/.well-known/')) return null;
+  if (!pathname.startsWith('/assets/') && pathname !== '/favicon.ico') return null;
   const rel = pathname.replace(/^\/+/, '');
   const abs = path.join(BUILD_CLIENT_DIR, rel);
   if (!abs.startsWith(BUILD_CLIENT_DIR)) {
@@ -164,53 +162,6 @@ async function tryServeStatic(req) {
   } catch {
     return null;
   }
-}
-
-function findFirstAsset(prefix, ext) {
-  try {
-    const files = fs.readdirSync(BUILD_CLIENT_ASSETS_DIR);
-    const match = files.find((f) => f.startsWith(prefix) && f.endsWith(ext));
-    return match ? `/assets/${match}` : '';
-  } catch {
-    return '';
-  }
-}
-
-async function spaFallbackResponse() {
-  // Try to serve prebuilt index.html if present (SPA build)
-  const idx = path.join(BUILD_CLIENT_DIR, 'index.html');
-  try {
-    const fileObj = Bun.file(idx);
-    if (await fileObj.exists()) {
-      const headers = new Headers();
-      headers.set('Content-Type', 'text/html; charset=utf-8');
-      return new Response(fileObj, { status: 200, headers });
-    }
-  } catch {}
-
-  // Otherwise, synthesize a minimal index using discovered assets
-  const entry = findFirstAsset('entry.client-', '.js');
-  const css = findFirstAsset('root-', '.css');
-  const manifest = findFirstAsset('manifest-', '.js');
-  const cssTag = css ? `<link rel="stylesheet" href="${css}" />` : '';
-  const manifestTag = manifest ? `<script src="${manifest}" defer></script>` : '';
-  const html = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    ${cssTag}
-    ${manifestTag}
-    <title>RT Share</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    ${entry ? `<script type="module" src="${entry}"></script>` : ''}
-  </body>
-</html>`;
-  const headers = new Headers();
-  headers.set('Content-Type', 'text/html; charset=utf-8');
-  return new Response(html, { status: 200, headers });
 }
 
 function getUpgradeIP(server, req) {
@@ -366,9 +317,9 @@ async function main() {
       const build = await import(pathToFileURL(BUILD_SERVER_PATH).href);
       requestHandler = createRequestHandler(build, nodeEnv || 'production');
     } catch (err) {
-      console.warn('SSR build not available or incompatible:', err?.message || err);
-      console.warn('Falling back to SPA mode (no SSR).');
-      requestHandler = null;
+      console.error('Could not load SSR server build at', BUILD_SERVER_PATH);
+      console.error('Did you run `bun run build` in rt-share-web?');
+      throw err;
     }
   }
 
@@ -406,8 +357,7 @@ async function main() {
         if (requestHandler) {
           return await requestHandler(req);
         }
-        // SPA fallback if SSR is not available
-        return await spaFallbackResponse();
+        return new Response('SSR not available', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       } catch (err) {
         console.error('Request error:', err);
         return new Response('Internal Server Error', { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
@@ -438,9 +388,5 @@ async function main() {
 
 main().catch((err) => {
   console.error(err);
-  if (typeof Bun !== 'undefined' && typeof Bun.exit === 'function') {
-    Bun.exit(1);
-  } else {
-    process.exit(1);
-  }
+  Bun.exit(1);
 });
