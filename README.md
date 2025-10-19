@@ -1,6 +1,6 @@
 # RT Share
 
-RT Share is a peer-to-peer file and text sharing application. It now uses a Bun-powered HTTPS server with built‑in WebSocket signaling and a React Router based front‑end that establishes direct WebRTC connections between browsers.
+RT Share is a peer-to-peer file and text sharing application. It now uses a Node.js HTTPS server with built‑in WebSocket signaling and a React Router based front‑end that establishes direct WebRTC connections between browsers.
 
 ## Features
 
@@ -15,9 +15,9 @@ RT Share is a peer-to-peer file and text sharing application. It now uses a Bun-
 ## Technologies Used
 
 ### Server
-- Bun HTTPS server (ESM)
-- WebSocket signaling implemented with `Bun.serve`
-- Secure TLS support driven by Bun's native TLS options
+- Node.js HTTPS server (ESM)
+- Minimal WebSocket (RFC 6455) implementation for signaling
+- Secure TLS support via `https.createServer`
 
 ### Web Client
 - React Router with server‑side rendering enabled
@@ -43,11 +43,10 @@ At runtime the server looks for the config at `./config.json`, `../config.json`,
 ## Running
 
 - Development (2 terminals):
-  - Terminal A: `cd rt-share-web && bun install && bun run dev` (Vite dev server)
-  - Terminal B: `cd rt-share-web && bun run dev:server` (plain HTTP WS signaling on `ws://localhost:3000` — no TLS/config needed)
+  - Terminal A: `cd rt-share-web && npm run dev` (Vite dev server)
+  - Terminal B: `cd rt-share-web && npm run dev:server` (plain HTTP WS signaling on `ws://localhost:3000` — no TLS/config needed)
   - The dev server proxies WebSocket upgrades from `/ws` to the signaling server.
 - Production:
-  - `cd rt-share-web && bun install`
-  - `cd rt-share-web && bun run build`
-  - `cd rt-share-web && bun run start`
+  - `cd rt-share-web && npm run build`
+  - `cd rt-share-web && npm start`
   - The HTTPS server serves SSR responses and handles WebSocket upgrades on `/ws`.

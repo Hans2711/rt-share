@@ -21,7 +21,7 @@ A modern, production-ready template for building full-stack React applications u
 Install the dependencies:
 
 ```bash
-bun install
+npm install
 ```
 
 ### Development
@@ -29,7 +29,7 @@ bun install
 Start the development server with HMR:
 
 ```bash
-bun run dev
+npm run dev
 ```
 
 Your application will be available at `http://localhost:5173`.
@@ -39,7 +39,7 @@ Your application will be available at `http://localhost:5173`.
 Create a production build:
 
 ```bash
-bun run build
+npm run build
 ```
 
 ## Deployment

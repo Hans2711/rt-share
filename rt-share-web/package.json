@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bunx react-router build",
-    "dev": "bunx react-router dev",
-    "dev:server": "RT_PLAIN_WS=1 bun run ./server/index.js",
-    "typecheck": "bunx react-router typegen && bunx tsc --noEmit",
-    "start": "NODE_ENV=production bun run ./server/index.js"
+    "build": "react-router build",
+    "dev": "react-router dev",
+    "dev:server": "RT_PLAIN_WS=1 node ./server/index.js",
+    "typecheck": "react-router typegen && tsc",
+    "start": "NODE_ENV=Production forever start -a -l forever.log -o out.log -e err.log ./server/index.js",
+    "stop": "forever stopall",
+    "status": "forever list",
+    "logs": "forever logs"
   },
   "dependencies": {
     "@react-router/node": "^7.5.0",
