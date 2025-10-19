@@ -28,7 +28,7 @@ async function loadConfig() {
   const envPath = env.RT_SHARE_CONFIG || env.RTS_CONFIG;
   const candidates = [];
   if (envPath) candidates.push(envPath);
-  const cwd = Bun.cwd();
+  const cwd = (typeof Bun?.cwd === 'function') ? Bun.cwd() : (Bun?.cwd || process.cwd());
   candidates.push(path.resolve(cwd, 'config.json'));
   candidates.push(path.resolve(cwd, '..', 'config.json'));
   candidates.push(path.resolve(__dirname, 'config.json'));
@@ -388,5 +388,9 @@ async function main() {
 
 main().catch((err) => {
   console.error(err);
-  Bun.exit(1);
+  if (typeof Bun !== 'undefined' && typeof Bun.exit === 'function') {
+    Bun.exit(1);
+  } else {
+    process.exit(1);
+  }
 });

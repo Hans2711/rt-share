@@ -1,31 +1,41 @@
 import { jsx, jsxs } from "react/jsx-runtime";
 import { PassThrough } from "node:stream";
 import { createReadableStreamFromReadable } from "@react-router/node";
-import { ServerRouter, useMatches, useActionData, useLoaderData, useParams, useRouteError, useNavigation, Meta, Links, ScrollRestoration, Scripts, Outlet, isRouteErrorResponse } from "react-router";
+import { ServerRouter, UNSAFE_withComponentProps, Outlet, UNSAFE_withErrorBoundaryProps, isRouteErrorResponse, useNavigation, Meta, Links, ScrollRestoration, Scripts } from "react-router";
 import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
-import { createElement, useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 const streamTimeout = 5e3;
 function handleRequest(request, responseStatusCode, responseHeaders, routerContext, loadContext) {
   return new Promise((resolve, reject) => {
     let shellRendered = false;
     let userAgent = request.headers.get("user-agent");
     let readyOption = userAgent && isbot(userAgent) || routerContext.isSpaMode ? "onAllReady" : "onShellReady";
+    let timeoutId = setTimeout(
+      () => abort(),
+      streamTimeout + 1e3
+    );
     const { pipe, abort } = renderToPipeableStream(
       /* @__PURE__ */ jsx(ServerRouter, { context: routerContext, url: request.url }),
       {
         [readyOption]() {
           shellRendered = true;
-          const body = new PassThrough();
+          const body = new PassThrough({
+            final(callback) {
+              clearTimeout(timeoutId);
+              timeoutId = void 0;
+              callback();
+            }
+          });
           const stream = createReadableStreamFromReadable(body);
           responseHeaders.set("Content-Type", "text/html");
+          pipe(body);
           resolve(
             new Response(stream, {
               headers: responseHeaders,
               status: responseStatusCode
             })
           );
-          pipe(body);
         },
         onShellError(error) {
           reject(error);
@@ -38,7 +48,6 @@ function handleRequest(request, responseStatusCode, responseHeaders, routerConte
         }
       }
     );
-    setTimeout(abort, streamTimeout + 1e3);
   });
 }
 const entryServer = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
@@ -46,28 +55,6 @@ const entryServer = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineP
   default: handleRequest,
   streamTimeout
 }, Symbol.toStringTag, { value: "Module" }));
-function withComponentProps(Component) {
-  return function Wrapped() {
-    const props = {
-      params: useParams(),
-      loaderData: useLoaderData(),
-      actionData: useActionData(),
-      matches: useMatches()
-    };
-    return createElement(Component, props);
-  };
-}
-function withErrorBoundaryProps(ErrorBoundary3) {
-  return function Wrapped() {
-    const props = {
-      params: useParams(),
-      loaderData: useLoaderData(),
-      actionData: useActionData(),
-      error: useRouteError()
-    };
-    return createElement(ErrorBoundary3, props);
-  };
-}
 const links = () => [{
   rel: "preconnect",
   href: "https://fonts.googleapis.com"
@@ -119,10 +106,10 @@ function Layout({
     })]
   });
 }
-const root = withComponentProps(function App() {
+const root = UNSAFE_withComponentProps(function App() {
   return /* @__PURE__ */ jsx(Outlet, {});
 });
-const ErrorBoundary = withErrorBoundaryProps(function ErrorBoundary2({
+const ErrorBoundary = UNSAFE_withErrorBoundaryProps(function ErrorBoundary2({
   error
 }) {
   let message = "Oops!";
@@ -148,8 +135,42 @@ const route0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   default: root,
   links
 }, Symbol.toStringTag, { value: "Module" }));
+function detectDeviceLabel() {
+  var _a;
+  try {
+    const nav = typeof navigator !== "undefined" ? navigator : {};
+    const ua = String(nav.userAgent || "");
+    const platform = String(((_a = nav.userAgentData) == null ? void 0 : _a.platform) || nav.platform || "");
+    const isIpadLike = /iPad/i.test(ua) || /Macintosh/i.test(ua) && typeof nav.maxTouchPoints === "number" && nav.maxTouchPoints > 1;
+    if (/iPhone/i.test(ua)) return "iPhone";
+    if (isIpadLike) return "iPad";
+    if (/Android/i.test(ua)) return "Android";
+    if (/Windows/i.test(ua) || /Win/i.test(platform)) return "Windows";
+    if (/CrOS/i.test(ua) || /Chrome\s?OS/i.test(platform)) return "ChromeOS";
+    if (/Mac OS X|Macintosh|MacIntel/i.test(ua) || /Mac/i.test(platform)) return "Mac";
+    if (/Linux/i.test(ua) || /Linux/i.test(platform)) return "Linux";
+    return "Device";
+  } catch {
+    return "Device";
+  }
+}
+function randomLetters(count) {
+  const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const buf = new Uint8Array(count);
+    crypto.getRandomValues(buf);
+    return Array.from(buf, (b) => alpha[b % 26]).join("");
+  }
+  let s = "";
+  for (let i = 0; i < count; i++) {
+    s += alpha[Math.floor(Math.random() * 26)];
+  }
+  return s;
+}
 function generateSessionId() {
-  return Math.floor(1e4 + Math.random() * 9e4).toString();
+  const label = detectDeviceLabel();
+  const suffix = randomLetters(2);
+  return `${label}-${suffix}`;
 }
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -204,9 +225,10 @@ function Chat({
 }) {
   const [messageInput, setMessageInput] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const canInteract = Boolean(targetUser && connectionStatus === "connected");
   const handleSendMessage = () => {
     const text = messageInput.trim();
-    if (!targetUser || !text) return;
+    if (!targetUser || connectionStatus !== "connected" || !text) return;
     console.log(text);
     onSendMessage(text);
     setMessageInput("");
@@ -214,20 +236,21 @@ function Chat({
   const handleFileChange = (e) => {
     var _a;
     const file = (_a = e.target.files) == null ? void 0 : _a[0];
-    if (!targetUser || !file) return;
+    if (!targetUser || connectionStatus !== "connected" || !file) return;
     console.log("Sending File", file);
     onSendFile(file);
     e.target.value = "";
   };
-  const indicatorColor = connectionStatus === "connected" ? "text-green-500 dark:text-green-600" : connectionStatus === "connecting" || connectionStatus === "reconnecting" ? "text-amber-500 dark:text-amber-600" : "text-red-700 dark:text-red-800";
-  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full bg-gray-100 dark:bg-gray-800", children: [
-    /* @__PURE__ */ jsxs("h2", { className: "p-3 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-800", children: [
-      targetUser ? `Chat with ${targetUser}` : "Chat",
-      targetUser && /* @__PURE__ */ jsx("span", { className: `ml-2 text-sm ${indicatorColor}`, children: connectionStatus === "connected" ? "Connected" : connectionStatus === "reconnecting" ? "Reconnecting..." : connectionStatus === "connecting" ? "Connecting..." : "Disconnected" })
-    ] }),
-    /* @__PURE__ */ jsx("hr", {}),
-    sendInfo.progress !== null && /* @__PURE__ */ jsxs("div", { className: "p-2", children: [
-      /* @__PURE__ */ jsxs("div", { children: [
+  return /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full", children: [
+    /* @__PURE__ */ jsx("div", { className: "bg-rt-sidebar pr-4 md:px-8 py-4 md:py-5 border-b border-rt-card", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between pl-14 md:pl-0", children: [
+      /* @__PURE__ */ jsx("h2", { className: "text-lg md:text-xl font-semibold text-white", children: targetUser ? `Chat with ${targetUser}` : "Chat" }),
+      targetUser && /* @__PURE__ */ jsxs("div", { className: `rounded-full px-3 py-1.5 flex items-center gap-2 ${connectionStatus === "connected" ? "bg-green-800/30" : connectionStatus === "connecting" ? "bg-amber-800/30" : connectionStatus === "reconnecting" ? "bg-amber-800/30" : "bg-red-800/30"}`, children: [
+        /* @__PURE__ */ jsx("div", { className: `w-2 h-2 rounded-full ${connectionStatus === "connected" ? "bg-rt-green" : connectionStatus === "connecting" ? "bg-amber-500" : connectionStatus === "reconnecting" ? "bg-amber-500 animate-pulse" : "bg-red-500"}` }),
+        /* @__PURE__ */ jsx("span", { className: `text-sm font-medium ${connectionStatus === "connected" ? "text-rt-green" : connectionStatus === "connecting" ? "text-amber-500" : connectionStatus === "reconnecting" ? "text-amber-500" : "text-red-500"}`, children: connectionStatus === "connected" ? "Connected" : connectionStatus === "reconnecting" ? "Reconnecting..." : connectionStatus === "connecting" ? "Connecting..." : "Disconnected" })
+      ] })
+    ] }) }),
+    sendInfo.progress !== null && /* @__PURE__ */ jsxs("div", { className: "px-4 md:px-8 py-3 bg-rt-sidebar border-b border-rt-card", children: [
+      /* @__PURE__ */ jsxs("div", { className: "text-rt-text-light text-sm mb-2", children: [
         "Sending ",
         sendInfo.filename,
         " (",
@@ -236,10 +259,17 @@ function Chat({
         sendInfo.progress,
         "%"
       ] }),
-      /* @__PURE__ */ jsx("progress", { value: sendInfo.progress ?? 0, max: 100, className: "w-full" })
+      /* @__PURE__ */ jsx(
+        "progress",
+        {
+          value: sendInfo.progress ?? 0,
+          max: 100,
+          className: "w-full h-2 bg-rt-card rounded-full overflow-hidden"
+        }
+      )
     ] }),
-    receiveInfo.progress !== null && /* @__PURE__ */ jsxs("div", { className: "p-2", children: [
-      /* @__PURE__ */ jsxs("div", { children: [
+    receiveInfo.progress !== null && /* @__PURE__ */ jsxs("div", { className: "px-4 md:px-8 py-3 bg-rt-sidebar border-b border-rt-card", children: [
+      /* @__PURE__ */ jsxs("div", { className: "text-rt-text-light text-sm mb-2", children: [
         "Receiving ",
         receiveInfo.filename,
         " (",
@@ -248,20 +278,37 @@ function Chat({
         receiveInfo.progress,
         "%"
       ] }),
-      /* @__PURE__ */ jsx("progress", { value: receiveInfo.progress ?? 0, max: 100, className: "w-full" })
+      /* @__PURE__ */ jsx(
+        "progress",
+        {
+          value: receiveInfo.progress ?? 0,
+          max: 100,
+          className: "w-full h-2 bg-rt-card rounded-full overflow-hidden"
+        }
+      )
     ] }),
-    /* @__PURE__ */ jsx("div", { className: "flex-1 p-4 overflow-y-auto dark:bg-gray-800", children: targetUser ? messages.map((message) => /* @__PURE__ */ jsxs(
+    /* @__PURE__ */ jsx("div", { className: "flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6 space-y-3 md:space-y-4", children: targetUser ? messages.map((message) => /* @__PURE__ */ jsx(
       "div",
       {
-        className: `mb-2 p-2 rounded-lg max-w-[70%] break-words ${message.sender === currentUser ? "bg-green-500/20 ml-auto dark:bg-green-600 dark:text-white" : "bg-white mr-auto dark:bg-gray-700 dark:text-gray-300"}`,
-        children: [
-          /* @__PURE__ */ jsx("div", { className: "text-xs text-gray-500 mb-1 dark:text-gray-300", children: message.sender === currentUser ? "You" : message.sender }),
-          message.isFile ? /* @__PURE__ */ jsx("div", { className: "file-message", children: message.filename }) : /* @__PURE__ */ jsx("div", { className: "text-message", children: message.text })
-        ]
+        className: `flex ${message.sender === currentUser ? "justify-end" : "justify-start"}`,
+        children: /* @__PURE__ */ jsxs(
+          "div",
+          {
+            className: `max-w-[85%] md:max-w-[70%] p-3 md:p-4 rounded-2xl ${message.sender === currentUser ? "bg-rt-message-out text-white" : "bg-rt-message-in text-white"}`,
+            children: [
+              /* @__PURE__ */ jsx("div", { className: "text-xs text-rt-text-light mb-2", children: message.sender === currentUser ? currentUser : message.sender }),
+              message.isFile ? /* @__PURE__ */ jsx("div", { className: "text-sm", children: message.filename }) : /* @__PURE__ */ jsx("div", { className: "text-sm leading-relaxed", children: message.text }),
+              /* @__PURE__ */ jsx("div", { className: `text-xs mt-2 ${message.sender === currentUser ? "text-white/70" : "text-rt-text-dark"}`, children: new Date(message.timestamp).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit"
+              }) })
+            ]
+          }
+        )
       },
       message.id
-    )) : /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-full text-gray-500 dark:text-gray-300", children: /* @__PURE__ */ jsx("p", { children: "Select a user to start chatting" }) }) }),
-    /* @__PURE__ */ jsx("div", { className: "p-2 flex flex-col gap-2 bg-gray-100 dark:bg-gray-700 md:p-4 md:gap-3", children: /* @__PURE__ */ jsxs("div", { className: "flex gap-2 md:gap-3", children: [
+    )) : /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-full text-rt-text-light", children: /* @__PURE__ */ jsx("p", { children: "Select a user to start chatting" }) }) }),
+    /* @__PURE__ */ jsx("div", { className: "bg-rt-sidebar px-4 md:px-8 py-4 md:py-5 border-t border-rt-card", children: /* @__PURE__ */ jsxs("div", { className: "flex flex-col md:flex-row gap-3", children: [
       /* @__PURE__ */ jsx(
         "input",
         {
@@ -270,89 +317,41 @@ function Chat({
           onChange: (e) => setMessageInput(e.target.value),
           onKeyPress: (e) => e.key === "Enter" && handleSendMessage(),
           placeholder: "Type a message...",
-          className: "flex-1 p-2 text-sm border border-gray-300 rounded dark:bg-gray-700 dark:text-gray-300 dark:border-gray-800",
-          disabled: !targetUser
+          className: "flex-1 bg-rt-card text-white placeholder-rt-text-gray rounded-2xl px-4 py-3 text-sm border-none focus:outline-none focus:ring-2 focus:ring-rt-green",
+          disabled: !canInteract
         }
       ),
-      /* @__PURE__ */ jsx("button", { onClick: handleSendMessage, disabled: !targetUser, className: "px-3 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 dark:bg-green-600 disabled:opacity-50", children: "Send" }),
-      /* @__PURE__ */ jsxs("div", { className: "relative", children: [
-        /* @__PURE__ */ jsxs("div", { className: "flex h-full", children: [
-          /* @__PURE__ */ jsx(
-            "label",
-            {
-              htmlFor: "file",
-              className: `px-3 py-2 text-sm bg-green-500 text-white rounded-l cursor-pointer hover:bg-green-600 dark:bg-green-600 ${!targetUser ? "opacity-50 pointer-events-none" : ""}`,
-              children: "Send File"
-            }
-          ),
-          /* @__PURE__ */ jsx(
-            "button",
-            {
-              type: "button",
-              onClick: () => setMenuOpen((v) => !v),
-              className: "px-2 py-2 text-sm bg-green-500 text-white rounded-r hover:bg-green-600 dark:bg-green-600",
-              children: "▲"
-            }
-          )
-        ] }),
-        menuOpen && /* @__PURE__ */ jsx("div", { className: "absolute bottom-full mb-2 right-0 bg-white border border-gray-300 rounded shadow-md dark:bg-gray-700 dark:border-gray-600", children: /* @__PURE__ */ jsx(
+      /* @__PURE__ */ jsxs("div", { className: "flex gap-3", children: [
+        /* @__PURE__ */ jsx(
           "button",
           {
-            onClick: () => {
-              setMenuOpen(false);
-              onShowHistory();
-            },
-            className: "block px-4 py-2 text-sm w-full text-left hover:bg-gray-100 dark:hover:bg-gray-600",
-            children: "File History"
+            onClick: handleSendMessage,
+            disabled: !canInteract,
+            className: "flex-1 md:flex-none bg-rt-green-dark hover:bg-rt-green text-white px-4 md:px-6 py-3 rounded-2xl font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base",
+            children: "Send"
           }
-        ) })
-      ] }),
-      /* @__PURE__ */ jsx("input", { type: "file", name: "file", id: "file", onChange: handleFileChange, className: "hidden" })
+        ),
+        /* @__PURE__ */ jsx(
+          "label",
+          {
+            htmlFor: "file",
+            className: `flex-1 md:flex-none bg-rt-green-dark hover:bg-rt-green text-white px-4 md:px-6 py-3 rounded-2xl font-semibold cursor-pointer transition-colors flex items-center justify-center text-sm md:text-base ${!canInteract ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}`,
+            children: "Send File"
+          }
+        ),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "file",
+            name: "file",
+            id: "file",
+            onChange: handleFileChange,
+            className: "hidden",
+            disabled: !canInteract
+          }
+        )
+      ] })
     ] }) })
-  ] });
-}
-function getNetworkPrefix(ip) {
-  if (ip == "localhost") return ip;
-  const parts = ip.split(".");
-  return parts.length === 4 ? parts.slice(0, 3).join(".") : null;
-}
-function UserList({ users, currentUser, selectedUser, isOnline, onSelect }) {
-  var _a;
-  const [localOnly, setLocalOnly] = useState(false);
-  const myIp = (_a = users.find((u) => u.id === currentUser)) == null ? void 0 : _a.ip;
-  const myNetwork = myIp ? getNetworkPrefix(myIp) : null;
-  const heading = !isOnline ? "Waiting for Connection" : users.filter((u) => u.id !== currentUser).length === 0 ? "No Users" : `Users (You are ${currentUser})`;
-  return /* @__PURE__ */ jsxs("div", { className: "relative w-full bg-gray-100 border-b border-gray-300 overflow-y-auto md:w-[250px] md:border-b-0 md:border-r dark:bg-gray-800 dark:border-gray-800 ", children: [
-    /* @__PURE__ */ jsx("h2", { className: "p-3 m-0 bg-gray-100 border-b border-gray-300 dark:bg-gray-700 dark:border-gray-100", children: heading }),
-    /* @__PURE__ */ jsxs("label", { className: "border-b border-gray-300 w-full p-3 dark:border-gray-100 flex items-center justify-between gap-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700", children: [
-      /* @__PURE__ */ jsx("span", { children: "Local Only" }),
-      /* @__PURE__ */ jsx(
-        "input",
-        {
-          type: "checkbox",
-          checked: localOnly,
-          onChange: () => setLocalOnly((v) => !v),
-          className: "form-checkbox h-5 w-5 text-blue-600"
-        }
-      )
-    ] }),
-    /* @__PURE__ */ jsx("ul", { className: "list-none p-0 m-0", children: users.filter((u) => u.id !== currentUser).filter((u) => {
-      if (!localOnly) return true;
-      const otherNetwork = getNetworkPrefix(u.ip);
-      return myNetwork !== null && otherNetwork === myNetwork;
-    }).map((u) => /* @__PURE__ */ jsxs(
-      "li",
-      {
-        className: `p-3 cursor-pointer border-b border-gray-300 hover:bg-gray-100 dark:border-gray-100 dark:hover:bg-gray-700 ${selectedUser === u.id ? "bg-gray-300 font-bold dark:bg-gray-700 dark:text-gray-100" : ""} ${!u.isOnline ? "opacity-50" : ""}`,
-        onClick: () => onSelect(u.id),
-        children: [
-          u.id,
-          " ",
-          !u.isOnline && "(Offline)"
-        ]
-      },
-      u.id
-    )) })
   ] });
 }
 function FileHistoryModal({ files, onClose }) {
@@ -367,30 +366,37 @@ function FileHistoryModal({ files, onClose }) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
-  return /* @__PURE__ */ jsx("div", { className: "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4", children: /* @__PURE__ */ jsxs("div", { className: "bg-white dark:bg-gray-800 rounded shadow w-full max-w-sm max-h-full overflow-y-auto p-4", children: [
-    /* @__PURE__ */ jsx("h2", { className: "text-lg font-bold mb-2", children: "Received Files" }),
-    files.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-sm", children: "No files yet." }) : /* @__PURE__ */ jsx("ul", { className: "divide-y divide-gray-300 dark:divide-gray-700", children: files.map((f, i) => /* @__PURE__ */ jsxs("li", { className: "py-2 flex items-center justify-between gap-2", children: [
-      /* @__PURE__ */ jsxs("span", { className: "text-sm break-all flex-1", children: [
-        f.sender ? `${f.sender}: ` : "",
-        f.filename
+  return /* @__PURE__ */ jsx("div", { className: "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4", children: /* @__PURE__ */ jsxs("div", { className: "bg-rt-sidebar rounded-2xl w-full max-w-md max-h-[80vh] overflow-hidden", children: [
+    /* @__PURE__ */ jsxs("div", { className: "px-6 py-5 border-b border-rt-card flex items-center justify-between", children: [
+      /* @__PURE__ */ jsx("h2", { className: "text-xl font-bold text-white", children: "Files History" }),
+      /* @__PURE__ */ jsx(
+        "button",
+        {
+          onClick: onClose,
+          className: "w-8 h-8 rounded-xl bg-rt-card hover:bg-rt-card/80 flex items-center justify-center text-white text-xl transition-colors",
+          children: "×"
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsx("div", { className: "p-6 max-h-96 overflow-y-auto", children: files.length === 0 ? /* @__PURE__ */ jsx("p", { className: "text-rt-text-light text-center py-8", children: "No files yet." }) : /* @__PURE__ */ jsx("div", { className: "space-y-3", children: files.map((f, i) => /* @__PURE__ */ jsx("div", { className: "bg-rt-card rounded-xl p-4", children: /* @__PURE__ */ jsxs("div", { className: "flex items-start justify-between", children: [
+      /* @__PURE__ */ jsxs("div", { className: "flex-1", children: [
+        /* @__PURE__ */ jsx("div", { className: "text-white text-sm font-medium mb-1 break-all", children: f.filename }),
+        /* @__PURE__ */ jsxs("div", { className: "text-rt-text-gray text-xs", children: [
+          f.sender ? `From ${f.sender}` : "",
+          f.sender && " • ",
+          (f.blob.size / 1024 / 1024).toFixed(1),
+          " MB"
+        ] })
       ] }),
       /* @__PURE__ */ jsx(
         "button",
         {
           onClick: () => handleDownload(f),
-          className: "px-2 py-1 text-xs bg-green-500 text-white rounded",
-          children: "Download"
+          className: "bg-rt-green-dark hover:bg-rt-green text-white px-3 py-2 rounded-lg font-medium text-sm transition-colors ml-3 flex-shrink-0",
+          children: "↓"
         }
       )
-    ] }, i)) }),
-    /* @__PURE__ */ jsx(
-      "button",
-      {
-        onClick: onClose,
-        className: "mt-4 w-full px-3 py-2 text-sm bg-gray-200 rounded dark:bg-gray-700 dark:text-gray-200",
-        children: "Close"
-      }
-    )
+    ] }) }, i)) }) })
   ] }) });
 }
 function RtShare() {
@@ -398,9 +404,13 @@ function RtShare() {
   const wsRef = useRef(null);
   const peerConns = useRef({});
   const dataChannels = useRef({});
-  const p2pFailCount = useRef(0);
+  const p2pFailCount = useRef({});
   const reconnectAttempts = useRef(0);
   const reconnectTimer = useRef(null);
+  const pendingIceCandidates = useRef({});
+  const connectionTimeouts = useRef({});
+  const fileReceiveTimeouts = useRef({});
+  const fileSendTimeouts = useRef({});
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const selectedUserRef = useRef(null);
@@ -413,6 +423,7 @@ function RtShare() {
   const [sendFileInfo, setSendFileInfo] = useState(null);
   const [receiveFileInfo, setReceiveFileInfo] = useState(null);
   const [receivedFiles, setReceivedFiles] = useState({});
+  const isShuttingDownRef = useRef(false);
   useEffect(() => {
     try {
       const raw = localStorage.getItem("receivedFileHistory");
@@ -431,6 +442,13 @@ function RtShare() {
     }
   }, []);
   const [showHistory, setShowHistory] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  useEffect(() => {
+    const isMobile = window.innerWidth < 768;
+    if (isMobile && !selectedUser) {
+      setSidebarOpen(true);
+    }
+  }, [selectedUser]);
   const [peerStatuses, setPeerStatuses] = useState({});
   const allowedRecipients = useRef({});
   const allowedSenders = useRef({});
@@ -505,8 +523,21 @@ function RtShare() {
       } catch {
       }
     });
+    Object.values(connectionTimeouts.current).forEach((timeoutId) => {
+      clearTimeout(timeoutId);
+    });
+    Object.values(fileReceiveTimeouts.current).forEach((timeoutId) => {
+      clearTimeout(timeoutId);
+    });
+    Object.values(fileSendTimeouts.current).forEach((timeoutId) => {
+      clearTimeout(timeoutId);
+    });
     peerConns.current = {};
     dataChannels.current = {};
+    pendingIceCandidates.current = {};
+    connectionTimeouts.current = {};
+    fileReceiveTimeouts.current = {};
+    fileSendTimeouts.current = {};
     setPeerStatuses({});
   };
   const selectUser = (uid) => {
@@ -516,13 +547,16 @@ function RtShare() {
       updatePeerStatus(uid, "disconnected");
       return;
     }
-    updatePeerStatus(uid, "connecting");
-    const shouldInitiate = sessionId > uid;
-    createPeerConnection(uid, shouldInitiate);
+    if (!peerConns.current[uid]) {
+      updatePeerStatus(uid, "connecting");
+      const shouldInitiate = sessionId > uid;
+      createPeerConnection(uid, shouldInitiate);
+    }
   };
   useEffect(() => {
     let storedSessionId = localStorage.getItem("sessionId");
-    if (!storedSessionId) {
+    const needsMigration = !storedSessionId || /^\d{5}$/.test(storedSessionId);
+    if (needsMigration) {
       storedSessionId = generateSessionId();
       localStorage.setItem("sessionId", storedSessionId);
     }
@@ -543,6 +577,7 @@ function RtShare() {
       clearReconnectTimer();
       reconnectTimer.current = window.setTimeout(connect, delay);
     };
+    const didNotifyLeave = { value: false };
     const connect = () => {
       if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
         return;
@@ -557,6 +592,8 @@ function RtShare() {
         setError("");
         setIsConnecting(false);
         setIsOnline(true);
+        isShuttingDownRef.current = false;
+        didNotifyLeave.value = false;
         socket.send(JSON.stringify({ type: "join", payload: storedSessionId }) + "\n");
       };
       socket.addEventListener("error", (event) => {
@@ -566,7 +603,9 @@ function RtShare() {
       socket.onclose = () => {
         setIsOnline(false);
         cleanupPeerConnections();
-        scheduleReconnect();
+        if (!isShuttingDownRef.current) {
+          scheduleReconnect();
+        }
       };
       socket.onmessage = (event) => {
         var _a, _b;
@@ -608,6 +647,20 @@ function RtShare() {
           }
           delete dataChannels.current[userID];
           delete peerConns.current[userID];
+          delete pendingIceCandidates.current[userID];
+          delete p2pFailCount.current[userID];
+          if (connectionTimeouts.current[userID]) {
+            clearTimeout(connectionTimeouts.current[userID]);
+            delete connectionTimeouts.current[userID];
+          }
+          if (fileReceiveTimeouts.current[userID]) {
+            clearTimeout(fileReceiveTimeouts.current[userID]);
+            delete fileReceiveTimeouts.current[userID];
+          }
+          if (fileSendTimeouts.current[userID]) {
+            clearTimeout(fileSendTimeouts.current[userID]);
+            delete fileSendTimeouts.current[userID];
+          }
         } else if (jEvent.type === "offer" && jEvent.status === "forward") {
           handleOffer(jEvent.sender, jEvent.data);
         } else if (jEvent.type === "answer" && jEvent.status === "forward") {
@@ -618,8 +671,70 @@ function RtShare() {
       };
     };
     connect();
+    const notifyLeave = () => {
+      if (didNotifyLeave.value) return;
+      didNotifyLeave.value = true;
+      isShuttingDownRef.current = true;
+      try {
+        clearReconnectTimer();
+      } catch {
+      }
+      try {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          try {
+            wsRef.current.send(JSON.stringify({ type: "leave", payload: storedSessionId }) + "\n");
+          } catch {
+          }
+          try {
+            wsRef.current.close();
+          } catch {
+          }
+        } else if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
+          try {
+            wsRef.current.close();
+          } catch {
+          }
+        }
+      } catch {
+      }
+      try {
+        cleanupPeerConnections();
+      } catch {
+      }
+    };
+    const onPageHide = () => notifyLeave();
+    const onBeforeUnload = () => notifyLeave();
+    const onFreeze = () => notifyLeave();
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("freeze", onFreeze);
+    const onPageShow = () => {
+      isShuttingDownRef.current = false;
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN && wsRef.current.readyState !== WebSocket.CONNECTING) {
+        connect();
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        isShuttingDownRef.current = false;
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN && wsRef.current.readyState !== WebSocket.CONNECTING) {
+          connect();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
+      try {
+        window.removeEventListener("pagehide", onPageHide);
+        window.removeEventListener("beforeunload", onBeforeUnload);
+        document.removeEventListener("freeze", onFreeze);
+        window.removeEventListener("pageshow", onPageShow);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      } catch {
+      }
       clearReconnectTimer();
+      isShuttingDownRef.current = true;
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         try {
           wsRef.current.send(JSON.stringify({ type: "leave", payload: storedSessionId }) + "\n");
@@ -643,6 +758,11 @@ function RtShare() {
       } catch {
       }
       delete peerConns.current[userId];
+      delete pendingIceCandidates.current[userId];
+      if (connectionTimeouts.current[userId]) {
+        clearTimeout(connectionTimeouts.current[userId]);
+        delete connectionTimeouts.current[userId];
+      }
       const userOnline = usersRef.current.some((u) => u.id === userId && u.isOnline);
       if (isOnlineRef.current && userOnline) {
         updatePeerStatus(userId, "reconnecting");
@@ -702,6 +822,18 @@ function RtShare() {
           };
           setReceiveFileInfo({ name: msg.filename, size: msg.size });
           setReceiveProgress(0);
+          if (fileReceiveTimeouts.current[userId]) {
+            clearTimeout(fileReceiveTimeouts.current[userId]);
+          }
+          fileReceiveTimeouts.current[userId] = window.setTimeout(() => {
+            var _a2;
+            console.error(`File receive timeout for ${userId} - no chunks received in 2 minutes`);
+            (_a2 = incomingFiles.current[userId]) == null ? true : delete _a2[msg.filename];
+            setReceiveProgress(null);
+            setReceiveFileInfo(null);
+            delete fileReceiveTimeouts.current[userId];
+            alert(`File transfer from ${userId} failed: Connection timeout (no data received for 2 minutes)`);
+          }, 12e4);
         } else if (msg.type === "file-accept") {
           allowedRecipients.current[userId] = true;
           const pending = pendingFiles.current[userId];
@@ -715,6 +847,10 @@ function RtShare() {
         } else if (msg.type === "file-end") {
           const entry2 = (_b = incomingFiles.current[userId]) == null ? void 0 : _b[msg.filename];
           if (!entry2) return;
+          if (fileReceiveTimeouts.current[userId]) {
+            clearTimeout(fileReceiveTimeouts.current[userId]);
+            delete fileReceiveTimeouts.current[userId];
+          }
           const blob = new Blob(entry2.chunks);
           const url = URL.createObjectURL(blob);
           const a = Object.assign(document.createElement("a"), {
@@ -757,6 +893,19 @@ function RtShare() {
           current.chunks.push(ab);
           current.received += ab.byteLength;
           setReceiveProgress(Math.floor(current.received / current.size * 100));
+          if (fileReceiveTimeouts.current[userId]) {
+            clearTimeout(fileReceiveTimeouts.current[userId]);
+            const filename = Object.keys(files)[0];
+            fileReceiveTimeouts.current[userId] = window.setTimeout(() => {
+              var _a2;
+              console.error(`File receive timeout for ${userId} - no chunks received in 2 minutes`);
+              (_a2 = incomingFiles.current[userId]) == null ? true : delete _a2[filename];
+              setReceiveProgress(null);
+              setReceiveFileInfo(null);
+              delete fileReceiveTimeouts.current[userId];
+              alert(`File transfer from ${userId} failed: Connection timeout (no data received for 2 minutes)`);
+            }, 12e4);
+          }
         });
         return;
       }
@@ -775,19 +924,56 @@ function RtShare() {
     }));
     const pc = new RTCPeerConnection({
       iceServers: [
+        // Public STUN servers for NAT traversal
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" }
-      ]
+        { urls: "stun:stun2.l.google.com:19302" },
+        // Free public TURN servers for restrictive NATs/firewalls
+        // These allow relay connections when direct P2P fails
+        {
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        {
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        },
+        {
+          urls: "turn:openrelay.metered.ca:443?transport=tcp",
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        }
+      ],
+      // Improve connectivity in restrictive networks
+      iceCandidatePoolSize: 10,
+      iceTransportPolicy: "all"
+      // Try all connection types
     });
     peerConns.current[userId] = pc;
+    connectionTimeouts.current[userId] = window.setTimeout(() => {
+      if (pc.connectionState !== "connected") {
+        console.warn(`Connection timeout for ${userId}, attempting ICE restart`);
+        if (pc.connectionState !== "closed") {
+          createPeerConnection(userId, true);
+        }
+      }
+    }, 3e4);
+    pendingIceCandidates.current[userId] = [];
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") {
         updatePeerStatus(userId, "connected");
+        p2pFailCount.current[userId] = 0;
+        if (connectionTimeouts.current[userId]) {
+          clearTimeout(connectionTimeouts.current[userId]);
+          delete connectionTimeouts.current[userId];
+        }
       } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-        p2pFailCount.current += 1;
-        if (p2pFailCount.current >= 10) {
-          window.location.reload();
+        p2pFailCount.current[userId] = (p2pFailCount.current[userId] || 0) + 1;
+        if (p2pFailCount.current[userId] >= 5) {
+          console.error(`Peer ${userId} failed ${p2pFailCount.current[userId]} times. Giving up.`);
+          updatePeerStatus(userId, "disconnected");
           return;
         }
         console.warn("Peer connection dropped", userId);
@@ -797,6 +983,11 @@ function RtShare() {
         }
         delete peerConns.current[userId];
         delete dataChannels.current[userId];
+        delete pendingIceCandidates.current[userId];
+        if (connectionTimeouts.current[userId]) {
+          clearTimeout(connectionTimeouts.current[userId]);
+          delete connectionTimeouts.current[userId];
+        }
         const userOnline = usersRef.current.some((u) => u.id === userId && u.isOnline);
         if (isOnlineRef.current && userOnline) {
           updatePeerStatus(userId, "reconnecting");
@@ -818,7 +1009,26 @@ function RtShare() {
           payload: userId,
           text: JSON.stringify(e.candidate)
         }) + "\n");
+      } else if (!e.candidate) {
+        console.log(`ICE gathering complete for ${userId}`);
       }
+    };
+    pc.oniceconnectionstatechange = () => {
+      console.log(`ICE connection state for ${userId}: ${pc.iceConnectionState}`);
+      if (pc.iceConnectionState === "failed") {
+        console.warn(`ICE connection failed for ${userId}, attempting restart`);
+        if (pc.connectionState !== "closed" && sessionId > userId) {
+          setTimeout(() => {
+            if (pc.connectionState !== "connected") {
+              console.log(`Initiating ICE restart for ${userId}`);
+              pc.restartIce();
+            }
+          }, 1e3);
+        }
+      }
+    };
+    pc.onicegatheringstatechange = () => {
+      console.log(`ICE gathering state for ${userId}: ${pc.iceGatheringState}`);
     };
     pc.ondatachannel = (e) => setupDataChannel(userId, e.channel);
     if (initiate) {
@@ -836,13 +1046,29 @@ function RtShare() {
     }
   };
   const handleOffer = (userId, data) => {
+    const existingPc = peerConns.current[userId];
+    if (existingPc && existingPc.signalingState !== "stable") {
+      console.warn(`Offer glare detected with ${userId}. Our state: ${existingPc.signalingState}`);
+      if (sessionId < userId) {
+        console.log(`Backing off from offer glare (our ID is lower)`);
+        return;
+      } else {
+        console.log(`Proceeding with offer (their ID is lower), closing existing connection`);
+        try {
+          existingPc.close();
+        } catch {
+        }
+        delete peerConns.current[userId];
+        delete dataChannels.current[userId];
+      }
+    }
     createPeerConnection(userId, false);
     const pc = peerConns.current[userId];
-    if (!pc || pc.signalingState !== "stable") {
-      console.warn("Ignoring unexpected offer in state", pc == null ? void 0 : pc.signalingState);
-      return;
-    }
-    pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data))).then(() => pc.createAnswer()).then((a) => pc.setLocalDescription(a)).then(() => {
+    if (!pc) return;
+    pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data))).then(() => {
+      processPendingCandidates(userId);
+      return pc.createAnswer();
+    }).then((a) => pc.setLocalDescription(a)).then(() => {
       if (wsRef.current && pc.localDescription) {
         wsRef.current.send(JSON.stringify({
           type: "answer",
@@ -850,17 +1076,46 @@ function RtShare() {
           text: JSON.stringify(pc.localDescription)
         }) + "\n");
       }
+    }).catch((err) => {
+      console.error(`Failed to handle offer from ${userId}:`, err);
+      updatePeerStatus(userId, "disconnected");
     });
   };
   const handleAnswer = (userId, data) => {
     const pc = peerConns.current[userId];
     if (pc && pc.signalingState === "have-local-offer") {
-      pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data)));
+      pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(data))).then(() => {
+        processPendingCandidates(userId);
+      }).catch((err) => {
+        console.error(`Failed to set remote description for ${userId}:`, err);
+      });
     }
   };
   const handleCandidate = (userId, data) => {
     const pc = peerConns.current[userId];
-    if (pc) pc.addIceCandidate(new RTCIceCandidate(JSON.parse(data)));
+    if (!pc) return;
+    const candidate = JSON.parse(data);
+    if (!pc.remoteDescription) {
+      console.log(`Queueing ICE candidate for ${userId} (remote description not set)`);
+      pendingIceCandidates.current[userId] = pendingIceCandidates.current[userId] || [];
+      pendingIceCandidates.current[userId].push(candidate);
+      return;
+    }
+    pc.addIceCandidate(new RTCIceCandidate(candidate)).catch((err) => {
+      console.error(`Failed to add ICE candidate for ${userId}:`, err);
+    });
+  };
+  const processPendingCandidates = (userId) => {
+    const pc = peerConns.current[userId];
+    const pending = pendingIceCandidates.current[userId];
+    if (!pc || !pending || pending.length === 0) return;
+    console.log(`Processing ${pending.length} queued ICE candidates for ${userId}`);
+    pending.forEach((candidate) => {
+      pc.addIceCandidate(new RTCIceCandidate(candidate)).catch((err) => {
+        console.error(`Failed to add queued ICE candidate for ${userId}:`, err);
+      });
+    });
+    pendingIceCandidates.current[userId] = [];
   };
   const ensureConnection = (userId) => {
     const channel = dataChannels.current[userId];
@@ -917,6 +1172,22 @@ function RtShare() {
     console.debug(`Preparing to send '${file.name}' (${file.size} B)`);
     const MAX_BUFFERED = 16 * 1024 * 1024;
     channel.bufferedAmountLowThreshold = 4 * 1024 * 1024;
+    let sendTimeoutId = null;
+    const resetSendTimeout = () => {
+      if (sendTimeoutId) clearTimeout(sendTimeoutId);
+      sendTimeoutId = window.setTimeout(() => {
+        console.error(`File send timeout for ${targetUser} - no chunks sent in 2 minutes`);
+        setSendProgress(null);
+        setSendFileInfo(null);
+        alert(`File transfer to ${targetUser} failed: Connection timeout (no data sent for 2 minutes)`);
+      }, 12e4);
+    };
+    const clearSendTimeout = () => {
+      if (sendTimeoutId) {
+        clearTimeout(sendTimeoutId);
+        sendTimeoutId = null;
+      }
+    };
     const waitForDrain = () => new Promise((resolve) => {
       if (channel.bufferedAmount <= channel.bufferedAmountLowThreshold) {
         resolve();
@@ -932,6 +1203,7 @@ function RtShare() {
     setSendFileInfo({ name: file.name, size: file.size });
     let sent = 0;
     setSendProgress(0);
+    resetSendTimeout();
     const reader = file.stream().getReader();
     while (true) {
       const { value, done } = await reader.read();
@@ -945,10 +1217,13 @@ function RtShare() {
         }
         try {
           channel.send(chunk);
+          resetSendTimeout();
         } catch (err) {
           console.error("Failed to send chunk:", err);
+          clearSendTimeout();
           alert("File transfer aborted.");
           setSendProgress(null);
+          setSendFileInfo(null);
           return;
         }
         offset = end;
@@ -956,6 +1231,7 @@ function RtShare() {
         setSendProgress(Math.floor(sent / file.size * 100));
       }
     }
+    clearSendTimeout();
     channel.send(JSON.stringify({ type: "file-end", filename: file.name }));
     setSendProgress(null);
     setSendFileInfo(null);
@@ -1009,19 +1285,97 @@ function RtShare() {
       window.removeEventListener("offline", onOffline);
     };
   }, []);
-  return /* @__PURE__ */ jsxs("div", { className: "p-2 md:p-5 max-w-screen-xl mx-auto h-screen overflow-hidden", children: [
-    /* @__PURE__ */ jsxs("div", { className: "flex flex-col h-full border border-gray-300 rounded-lg overflow-hidden md:flex-row md:h-[80vh] dark:border-gray-800", children: [
+  return /* @__PURE__ */ jsxs("div", { className: "min-h-screen bg-rt-dark p-2 md:p-4", children: [
+    /* @__PURE__ */ jsx("div", { className: "max-w-screen-xl mx-auto h-[calc(100vh-1rem)] md:h-[calc(100vh-2rem)] rounded-xl md:rounded-2xl overflow-hidden bg-rt-dark", children: /* @__PURE__ */ jsxs("div", { className: "flex h-full relative", children: [
       /* @__PURE__ */ jsx(
-        UserList,
+        "button",
         {
-          users,
-          currentUser: sessionId,
-          selectedUser,
-          isOnline,
-          onSelect: selectUser
+          onClick: () => setSidebarOpen(!sidebarOpen),
+          className: "md:hidden absolute top-3 left-4 z-50 w-8 h-8 bg-rt-card rounded-lg flex items-center justify-center text-white shadow-lg border border-rt-text-gray/30",
+          children: /* @__PURE__ */ jsx("svg", { className: "w-5 h-5", fill: "none", stroke: "currentColor", viewBox: "0 0 24 24", xmlns: "http://www.w3.org/2000/svg", children: /* @__PURE__ */ jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M4 6h16M4 12h16M4 18h16" }) })
         }
       ),
-      /* @__PURE__ */ jsx("div", { className: "flex flex-col flex-1 min-h-[60vh] overflow-y-auto", children: isConnecting ? /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-full text-gray-500 dark:text-gray-300", children: "Connecting..." }) : error ? /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-full text-red-700 dark:text-red-800", children: /* @__PURE__ */ jsxs("p", { children: [
+      /* @__PURE__ */ jsxs("div", { className: `${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 fixed md:relative z-30 md:z-auto w-[280px] bg-rt-sidebar flex flex-col h-full transition-transform duration-300 ease-in-out`, children: [
+        /* @__PURE__ */ jsxs("div", { className: "pr-4 pt-16 pb-4 md:p-6 border-b border-rt-card", children: [
+          /* @__PURE__ */ jsx("div", { className: "flex items-center gap-3 pl-4 md:pl-0", children: /* @__PURE__ */ jsxs(
+            "a",
+            {
+              href: "https://github.com/Hans2711/rt-share",
+              target: "_blank",
+              rel: "noopener noreferrer",
+              className: "text-xl md:text-2xl font-bold text-white hover:text-rt-green transition-colors flex items-center gap-2",
+              children: [
+                "RT-Share",
+                /* @__PURE__ */ jsx("svg", { className: "w-4 h-4 md:w-5 md:h-5", fill: "none", stroke: "currentColor", viewBox: "0 0 24 24", xmlns: "http://www.w3.org/2000/svg", children: /* @__PURE__ */ jsx("path", { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" }) })
+              ]
+            }
+          ) }),
+          /* @__PURE__ */ jsxs("p", { className: "text-rt-text-gray text-sm pl-4 md:pl-0 mt-2", children: [
+            "Your ID: ",
+            sessionId
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxs("div", { className: "p-4 md:p-6 flex-1", children: [
+          /* @__PURE__ */ jsx("h2", { className: "text-lg font-semibold text-white mb-4", children: "Users" }),
+          /* @__PURE__ */ jsx("div", { className: "space-y-3", children: users.filter((u) => u.id !== sessionId).map((u) => {
+            const connectionStatus = peerStatuses[u.id] || "disconnected";
+            return /* @__PURE__ */ jsxs(
+              "div",
+              {
+                onClick: () => {
+                  selectUser(u.id);
+                  setSidebarOpen(false);
+                },
+                className: `p-3 md:p-4 rounded-2xl cursor-pointer transition-colors ${selectedUser === u.id ? "bg-rt-card border border-rt-green" : "bg-rt-card hover:bg-rt-card/80"} ${!u.isOnline ? "opacity-50" : ""}`,
+                children: [
+                  /* @__PURE__ */ jsx("div", { className: "text-white font-medium text-sm md:text-base", children: u.id }),
+                  /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-3 mt-2", children: [
+                    /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
+                      /* @__PURE__ */ jsx("div", { className: `w-2 h-2 rounded-full mr-2 ${u.isOnline ? "bg-rt-green" : "bg-rt-text-dark"}` }),
+                      /* @__PURE__ */ jsx("span", { className: "text-rt-text-gray text-xs", children: u.isOnline ? "Online" : "Offline" })
+                    ] }),
+                    u.isOnline && /* @__PURE__ */ jsxs("div", { className: "flex items-center", children: [
+                      /* @__PURE__ */ jsx("div", { className: `w-2 h-2 rounded-full mr-2 ${connectionStatus === "connected" ? "bg-blue-500" : connectionStatus === "connecting" ? "bg-yellow-500" : connectionStatus === "reconnecting" ? "bg-orange-500" : "bg-rt-text-dark"}` }),
+                      /* @__PURE__ */ jsx("span", { className: "text-rt-text-gray text-xs capitalize", children: connectionStatus === "connected" ? "Connected" : connectionStatus === "connecting" ? "Connecting" : connectionStatus === "reconnecting" ? "Reconnecting" : "Disconnected" })
+                    ] })
+                  ] })
+                ]
+              },
+              u.id
+            );
+          }) }),
+          /* @__PURE__ */ jsx("div", { className: "hidden md:block mt-6", children: /* @__PURE__ */ jsxs("label", { htmlFor: "localOnly", className: "flex items-center p-3 rounded-lg cursor-pointer hover:bg-rt-card/50 transition-colors", children: [
+            /* @__PURE__ */ jsx(
+              "input",
+              {
+                type: "checkbox",
+                id: "localOnly",
+                className: "w-4 h-4 rounded border-rt-text-gray bg-transparent checked:bg-rt-green focus:ring-rt-green mr-3"
+              }
+            ),
+            /* @__PURE__ */ jsx("span", { className: "text-rt-text-light text-sm", children: "Local only" })
+          ] }) })
+        ] }),
+        /* @__PURE__ */ jsx("div", { className: "px-4 py-4 md:px-6 md:py-5 border-t border-rt-card", children: /* @__PURE__ */ jsx(
+          "button",
+          {
+            onClick: () => {
+              setShowHistory(true);
+              setSidebarOpen(false);
+            },
+            className: "w-full bg-rt-card hover:bg-rt-card/80 text-white py-3 px-4 rounded-2xl font-semibold transition-colors flex items-center justify-center",
+            children: "📁 Files"
+          }
+        ) })
+      ] }),
+      sidebarOpen && /* @__PURE__ */ jsx(
+        "div",
+        {
+          className: "md:hidden fixed inset-0 bg-black/50 z-20",
+          onClick: () => setSidebarOpen(false)
+        }
+      ),
+      /* @__PURE__ */ jsx("div", { className: "flex-1 bg-rt-dark flex flex-col ml-0 md:ml-0", children: isConnecting ? /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-full text-rt-text-light", children: "Connecting..." }) : error ? /* @__PURE__ */ jsx("div", { className: "flex items-center justify-center h-full text-red-400", children: /* @__PURE__ */ jsxs("p", { children: [
         "Error: ",
         error
       ] }) }) : /* @__PURE__ */ jsx(
@@ -1040,7 +1394,7 @@ function RtShare() {
           onShowHistory: () => setShowHistory(true)
         }
       ) })
-    ] }),
+    ] }) }),
     showHistory && /* @__PURE__ */ jsx(
       FileHistoryModal,
       {
@@ -1060,7 +1414,7 @@ function meta({}) {
     content: "Real-time file and text sharing"
   }];
 }
-const home = withComponentProps(function Home() {
+const home = UNSAFE_withComponentProps(function Home() {
   return /* @__PURE__ */ jsx(RtShare, {});
 });
 const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
@@ -1068,10 +1422,10 @@ const route1 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProper
   default: home,
   meta
 }, Symbol.toStringTag, { value: "Module" }));
-const serverManifest = { "entry": { "module": "/assets/entry.client-CQuZlVIP.js", "imports": ["/assets/chunk-D4RADZKF-l-Tz34VA.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": true, "module": "/assets/root-BLXRHPAJ.js", "imports": ["/assets/chunk-D4RADZKF-l-Tz34VA.js", "/assets/with-props-DB8Vr4zk.js"], "css": ["/assets/root-M3cUTNjT.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/home": { "id": "routes/home", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/home-KbfvnE9q.js", "imports": ["/assets/with-props-DB8Vr4zk.js", "/assets/chunk-D4RADZKF-l-Tz34VA.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-487feedd.js", "version": "487feedd", "sri": void 0 };
+const serverManifest = { "entry": { "module": "/assets/entry.client-ClWNrGOZ.js", "imports": ["/assets/chunk-OIYGIGL5-DNcqb-aR.js"], "css": [] }, "routes": { "root": { "id": "root", "parentId": void 0, "path": "", "index": void 0, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": true, "module": "/assets/root-DhyBHqtX.js", "imports": ["/assets/chunk-OIYGIGL5-DNcqb-aR.js"], "css": ["/assets/root-DTgKIvAR.css"], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 }, "routes/home": { "id": "routes/home", "parentId": "root", "path": void 0, "index": true, "caseSensitive": void 0, "hasAction": false, "hasLoader": false, "hasClientAction": false, "hasClientLoader": false, "hasClientMiddleware": false, "hasErrorBoundary": false, "module": "/assets/home-26tPzgVc.js", "imports": ["/assets/chunk-OIYGIGL5-DNcqb-aR.js"], "css": [], "clientActionModule": void 0, "clientLoaderModule": void 0, "clientMiddlewareModule": void 0, "hydrateFallbackModule": void 0 } }, "url": "/assets/manifest-60cc8311.js", "version": "60cc8311", "sri": void 0 };
 const assetsBuildDirectory = "build/client";
 const basename = "/";
-const future = { "unstable_middleware": false, "unstable_optimizeDeps": false, "unstable_splitRouteModules": false, "unstable_subResourceIntegrity": false, "unstable_viteEnvironmentApi": false };
+const future = { "v8_middleware": false, "unstable_optimizeDeps": false, "unstable_splitRouteModules": false, "unstable_subResourceIntegrity": false, "unstable_viteEnvironmentApi": false };
 const ssr = true;
 const isSpaMode = false;
 const prerender = [];
