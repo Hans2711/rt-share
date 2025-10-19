@@ -1,6 +1,7 @@
 import type { Config } from "@react-router/dev/config";
 
 export default {
-  // Enable SSR so we can serve the app from our Node server
-  ssr: true,
+  // Disable SSR to improve Bun compatibility and avoid Node-specific streaming APIs.
+  // Production server will serve the SPA build with a graceful fallback.
+  ssr: false,
 } satisfies Config;
