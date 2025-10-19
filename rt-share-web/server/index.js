@@ -1,27 +1,21 @@
-// Node HTTPS server with SSR + minimal WebSocket signaling
-// ESM file (package.json has type: module)
-
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import path from 'node:path';
-import https from 'node:https';
-import http from 'node:http';
-import crypto from 'node:crypto';
+import { Buffer } from 'node:buffer';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createRequestListener } from '@react-router/node';
+import { createRequestHandler } from 'react-router';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Resolve project layout
 const WEB_DIR = path.resolve(__dirname, '..');
 const BUILD_SERVER_PATH = path.resolve(WEB_DIR, 'build/server/index.js');
 const BUILD_CLIENT_DIR = path.resolve(WEB_DIR, 'build/client');
 
-// TLS/Config helpers (ported semantics from Go)
 async function readJSON(file) {
-  const buf = await fsp.readFile(file);
-  return JSON.parse(String(buf));
+  const fileObj = Bun.file(file);
+  if (!(await fileObj.exists())) {
+    throw new Error(`File not found: ${file}`);
+  }
+  return JSON.parse(await fileObj.text());
 }
 
 function resolvePath(baseDir, p) {
@@ -30,22 +24,22 @@ function resolvePath(baseDir, p) {
 }
 
 async function loadConfig() {
-  const envPath = process.env.RT_SHARE_CONFIG || process.env.RTS_CONFIG;
+  const env = Bun.env;
+  const envPath = env.RT_SHARE_CONFIG || env.RTS_CONFIG;
   const candidates = [];
   if (envPath) candidates.push(envPath);
-  // CWD + parent + alongside this file
-  const cwd = process.cwd();
+  const cwd = Bun.cwd();
   candidates.push(path.resolve(cwd, 'config.json'));
   candidates.push(path.resolve(cwd, '..', 'config.json'));
   candidates.push(path.resolve(__dirname, 'config.json'));
   candidates.push(path.resolve(__dirname, '..', 'config.json'));
   candidates.push(path.resolve(__dirname, '..', '..', 'config.json'));
-  for (const p of candidates) {
-    try {
-      await fsp.access(p, fs.constants.R_OK);
-      const cfg = await readJSON(p);
-      return { cfg, cfgPath: p };
-    } catch {}
+  for (const candidate of candidates) {
+    const fileObj = Bun.file(candidate);
+    if (await fileObj.exists()) {
+      const cfg = await readJSON(candidate);
+      return { cfg, cfgPath: candidate };
+    }
   }
   throw new Error(`config.json not found; checked: ${candidates.join(', ')}`);
 }
@@ -55,7 +49,6 @@ function minVersionTag(s) {
 }
 
 function parsePEMBlocks(pemData) {
-  // Return { certs: string, key: string|null }
   const text = String(pemData);
   const blocks = text.split(/-----END [^-]+-----/g);
   let certs = '';
@@ -64,14 +57,13 @@ function parsePEMBlocks(pemData) {
   for (const chunk of blocks) {
     if (!chunk.trim()) continue;
     const endMarker = '-----END ';
-    // Re-attach the END marker we split on
     const endStart = text.indexOf(endMarker, idx);
     if (endStart === -1) break;
     const endClose = text.indexOf('-----', endStart + endMarker.length);
     const type = text.slice(endStart + endMarker.length, endClose).trim();
     const beginStart = text.lastIndexOf('-----BEGIN ', endStart);
     const beginClose = text.indexOf('-----', beginStart + '-----BEGIN '.length);
-    const block = text.slice(beginStart, endClose + 5); // include trailing -----
+    const block = text.slice(beginStart, endClose + 5);
     idx = endClose + 5;
     if (/PRIVATE KEY/.test(type) && key == null) {
       key = block + '\n';
@@ -88,23 +80,24 @@ async function buildTlsOptions(baseDir, t) {
     minVersion: minVersionTag(t.min_version),
   };
   if (t.everything_file) {
-    const everything = await fsp.readFile(resolvePath(baseDir, t.everything_file));
+    const everything = await Bun.file(resolvePath(baseDir, t.everything_file)).text();
     const { certs, key } = parsePEMBlocks(everything);
     if (!key || !certs) throw new Error('everything_file missing key or certs');
     opts.key = key;
+    opts.cert = certs;
     if (t.ca_file) {
-      const ca = await fsp.readFile(resolvePath(baseDir, t.ca_file), 'utf8');
-      opts.cert = certs + '\n' + ca;
-    } else {
-      opts.cert = certs;
+      const ca = await Bun.file(resolvePath(baseDir, t.ca_file)).text();
+      opts.cert = `${opts.cert}\n${ca}`;
+      opts.ca = ca;
     }
   } else if ((t.combined_file && t.key_file) || (t.cert_file && t.key_file)) {
     const certSrc = t.combined_file || t.cert_file;
-    opts.cert = await fsp.readFile(resolvePath(baseDir, certSrc), 'utf8');
-    opts.key = await fsp.readFile(resolvePath(baseDir, t.key_file), 'utf8');
+    opts.cert = await Bun.file(resolvePath(baseDir, certSrc)).text();
+    opts.key = await Bun.file(resolvePath(baseDir, t.key_file)).text();
     if (t.ca_file) {
-      const ca = await fsp.readFile(resolvePath(baseDir, t.ca_file), 'utf8');
-      opts.cert += '\n' + ca;
+      const ca = await Bun.file(resolvePath(baseDir, t.ca_file)).text();
+      opts.cert = `${opts.cert}\n${ca}`;
+      opts.ca = ca;
     }
   } else {
     throw new Error('invalid TLS configuration: set either everything_file, or combined_file+key_file, or cert_file+key_file');
@@ -118,7 +111,6 @@ function parseAddress(addr) {
     const port = Number(addr.slice(1)) || 3000;
     return { host: '0.0.0.0', port };
   }
-  // basic host:port (non-IPv6) parser
   const lastColon = addr.lastIndexOf(':');
   if (lastColon > 0) {
     const host = addr.slice(0, lastColon);
@@ -129,7 +121,6 @@ function parseAddress(addr) {
   return { host: '0.0.0.0', port };
 }
 
-// Static file serve from build/client
 function contentTypeFor(file) {
   const ext = path.extname(file).toLowerCase();
   switch (ext) {
@@ -146,339 +137,256 @@ function contentTypeFor(file) {
   }
 }
 
-async function tryServeStatic(req, res) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
-  const url = new URL(req.url, `https://${req.headers.host}`);
+async function tryServeStatic(req) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return null;
+  const url = new URL(req.url);
   const pathname = decodeURIComponent(url.pathname);
-  if (!pathname.startsWith('/assets/') && pathname !== '/favicon.ico') return false;
+  if (!pathname.startsWith('/assets/') && pathname !== '/favicon.ico') return null;
   const rel = pathname.replace(/^\/+/, '');
   const abs = path.join(BUILD_CLIENT_DIR, rel);
   if (!abs.startsWith(BUILD_CLIENT_DIR)) {
-    res.statusCode = 403; res.end('Forbidden'); return true;
+    return new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   }
   try {
-    const st = await fsp.stat(abs);
-    if (!st.isFile()) return false;
-    res.setHeader('Content-Type', contentTypeFor(abs));
+    const fileObj = Bun.file(abs);
+    if (!(await fileObj.exists())) return null;
+    const headers = new Headers();
+    headers.set('Content-Type', contentTypeFor(abs));
     if (pathname.startsWith('/assets/')) {
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      headers.set('Cache-Control', 'public, max-age=31536000, immutable');
     }
-    if (req.method === 'HEAD') { res.statusCode = 200; res.end(); return true; }
-    fs.createReadStream(abs).pipe(res);
-    return true;
+    if (req.method === 'HEAD') {
+      return new Response(null, { status: 200, headers });
+    }
+    return new Response(fileObj, { status: 200, headers });
   } catch {
-    return false;
+    return null;
   }
 }
 
-// Minimal WebSocket implementation (server side)
-class WSConn {
-  constructor(socket) {
-    this.socket = socket;
-    this.buffer = Buffer.alloc(0);
-    this.alive = true;
-    socket.on('data', (chunk) => this._onData(chunk));
-    socket.on('close', () => { this.alive = false; this.onclose?.(); });
-    socket.on('error', () => { this.alive = false; this.onclose?.(); });
-  }
-  sendText(text) {
-    if (!this.alive) return;
-    const payload = Buffer.from(text);
-    const len = payload.length;
-    let header;
-    if (len < 126) {
-      header = Buffer.alloc(2);
-      header[0] = 0x81; // FIN + text
-      header[1] = len;  // no mask from server
-    } else if (len < 65536) {
-      header = Buffer.alloc(4);
-      header[0] = 0x81;
-      header[1] = 126;
-      header.writeUInt16BE(len, 2);
-    } else {
-      header = Buffer.alloc(10);
-      header[0] = 0x81;
-      header[1] = 127;
-      // write 64-bit length (only high 32 and low 32)
-      header.writeUInt32BE(Math.floor(len / 2 ** 32), 2);
-      header.writeUInt32BE(len >>> 0, 6);
-    }
-    this.socket.write(header);
-    this.socket.write(payload);
-  }
-  sendJSON(obj) {
-    this.sendText(JSON.stringify(obj) + '\n');
-  }
-  close() {
-    try { this.socket.end(); } catch {}
-    this.alive = false;
-  }
-  _onData(chunk) {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    while (true) {
-      if (this.buffer.length < 2) return;
-      const b0 = this.buffer[0];
-      const b1 = this.buffer[1];
-      const fin = (b0 & 0x80) !== 0;
-      const opcode = b0 & 0x0f;
-      const masked = (b1 & 0x80) !== 0;
-      let len = b1 & 0x7f;
-      let off = 2;
-      if (len === 126) {
-        if (this.buffer.length < 4) return;
-        len = this.buffer.readUInt16BE(2);
-        off = 4;
-      } else if (len === 127) {
-        if (this.buffer.length < 10) return;
-        const high = this.buffer.readUInt32BE(2);
-        const low = this.buffer.readUInt32BE(6);
-        len = high * 2 ** 32 + low;
-        off = 10;
-      }
-      const need = off + (masked ? 4 : 0) + len;
-      if (this.buffer.length < need) return;
-      let mask;
-      if (masked) {
-        mask = this.buffer.slice(off, off + 4);
-        off += 4;
-      }
-      let payload = this.buffer.slice(off, off + len);
-      this.buffer = this.buffer.slice(need);
-      if (masked && len > 0) {
-        // unmask
-        for (let i = 0; i < payload.length; i++) {
-          payload[i] ^= mask[i % 4];
-        }
-      }
-      if (!fin) continue; // ignore fragmented for simplicity
-      if (opcode === 0x8) { // close
-        this.close();
-        return;
-      } else if (opcode === 0x9) { // ping -> pong
-        // respond pong with same payload
-        const pongHdr = Buffer.from([0x8a, payload.length]);
-        this.socket.write(pongHdr);
-        if (payload.length) this.socket.write(payload);
-      } else if (opcode === 0x1) { // text
-        const text = payload.toString('utf8');
-        this.onmessage?.(text);
-      }
-    }
-  }
+function getUpgradeIP(server, req) {
+  const fwd = req.headers.get('x-forwarded-for');
+  if (fwd && fwd.length) return fwd.split(',')[0].trim();
+  const real = req.headers.get('x-real-ip');
+  if (real && real.length) return real.trim();
+  const info = server.requestIP(req);
+  return info?.address || '';
 }
 
-function getClientIP(req) {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.length) {
-    return fwd.split(',')[0].trim();
+function normalizeMessage(message) {
+  if (typeof message === 'string') return message;
+  if (message instanceof ArrayBuffer) {
+    return Buffer.from(message).toString('utf8');
   }
-  const real = req.headers['x-real-ip'];
-  if (typeof real === 'string' && real.length) return real.trim();
-  return req.socket.remoteAddress || '';
+  if (ArrayBuffer.isView(message)) {
+    return Buffer.from(message.buffer, message.byteOffset, message.byteLength).toString('utf8');
+  }
+  return '';
 }
 
 class SignalServer {
   constructor() {
     this.conns = new Set();
-    this.users = new Map(); // userId -> WSConn
-    this.connIPs = new WeakMap(); // WSConn -> IP
+    this.users = new Map();
   }
-  addConn(req, conn) {
-    this.conns.add(conn);
-    this.connIPs.set(conn, getClientIP(req));
-    conn.onclose = () => this.removeConn(conn);
-    conn.onmessage = (text) => this._onText(conn, text);
+  handleOpen(ws) {
+    ws.data = { ...(ws.data || {}) };
+    this.conns.add(ws);
   }
-  removeConn(conn) {
-    if (!this.conns.has(conn)) return;
-    this.conns.delete(conn);
-    // remove user mapping if any
-    let leftUser = null;
-    for (const [id, c] of this.users.entries()) {
-      if (c === conn) { this.users.delete(id); leftUser = id; break; }
+  handleClose(ws, force = false) {
+    if (force) {
+      try {
+        ws.close();
+      } catch {}
     }
-    conn.close();
-    if (leftUser) {
-      this.broadcast({ type: 'leave', status: 'userLeft', message: `User ${leftUser} left`, data: leftUser });
+    if (!this.conns.has(ws)) return;
+    this.conns.delete(ws);
+    const userID = ws.data?.userId;
+    if (userID) {
+      this.users.delete(userID);
+      delete ws.data.userId;
+      this.broadcast({ type: 'leave', status: 'userLeft', message: `User ${userID} left`, data: userID });
     }
-  }
-  getUserConn(userId) { return this.users.get(userId) || null; }
-  getSenderUID(conn) {
-    for (const [id, c] of this.users.entries()) if (c === conn) return id; return '';
   }
   getAllUserInfoJSON() {
     const list = [];
-    for (const [id, c] of this.users.entries()) {
-      list.push({ id, ip: this.connIPs.get(c) || '' });
+    for (const [id, socket] of this.users.entries()) {
+      list.push({ id, ip: socket.data?.ip || '' });
     }
     return JSON.stringify(list);
   }
   broadcast(obj) {
-    const json = JSON.stringify(obj) + '\n';
-    for (const c of this.conns) {
-      try { c.sendText(json); } catch {}
+    const payload = JSON.stringify(obj) + '\n';
+    for (const ws of this.conns) {
+      try {
+        ws.send(payload);
+      } catch {
+        // Ignore send errors; connection cleanup happens in close handler
+      }
     }
   }
-  _onText(conn, text) {
-    // Allow newline-delimited JSON payloads
+  handleMessage(ws, raw) {
+    const text = normalizeMessage(raw);
+    if (!text) return;
     const parts = text.split('\n').filter(Boolean);
     for (const part of parts) {
       let msg;
-      try { msg = JSON.parse(part); } catch { continue; }
-      this._handleMessage(conn, msg);
+      try {
+        msg = JSON.parse(part);
+      } catch {
+        continue;
+      }
+      this._handle(ws, msg);
     }
   }
-  _handleMessage(conn, r) {
+  _handle(ws, r) {
     const type = r?.type;
     if (!type) return;
     if (type === 'join') {
       const userID = r.payload;
-      this.users.set(userID, conn);
-      const ip = this.connIPs.get(conn) || '';
-      this.broadcast({ type: 'join', status: 'userJoin', message: `User ${userID} joined`, data: userID, ip });
-      conn.sendJSON({ type: 'join', status: 'ok', message: `User ${userID} joined`, data: this.getAllUserInfoJSON() });
+      if (userID) {
+        const existing = this.users.get(userID);
+        if (existing && existing !== ws) {
+          this.handleClose(existing, true);
+        }
+        ws.data = { ...(ws.data || {}), userId: userID };
+        this.users.set(userID, ws);
+        const ip = ws.data?.ip || '';
+        this.broadcast({ type: 'join', status: 'userJoin', message: `User ${userID} joined`, data: userID, ip });
+        this._send(ws, { type: 'join', status: 'ok', message: `User ${userID} joined`, data: this.getAllUserInfoJSON() });
+      }
       return;
     }
     if (type === 'leave') {
       const userID = r.payload;
-      const c = this.getUserConn(userID);
-      if (c && c === conn) {
-        this.removeConn(c);
+      const existing = this.users.get(userID);
+      if (existing && existing === ws) {
+        this.handleClose(ws);
       }
-      conn.sendJSON({ type: 'leave', status: 'ok', message: 'Left', data: this.getAllUserInfoJSON() });
+      this._send(ws, { type: 'leave', status: 'ok', message: 'Left', data: this.getAllUserInfoJSON() });
       return;
     }
     if (type === 'offer' || type === 'answer' || type === 'candidate') {
       const targetID = r.payload;
-      const c = this.getUserConn(targetID);
-      if (!c) {
-        conn.sendJSON({ type, status: 'error', message: 'User not found' });
+      const target = this.users.get(targetID);
+      if (!target) {
+        this._send(ws, { type, status: 'error', message: 'User not found' });
         return;
       }
-      const senderID = this.getSenderUID(conn);
+      const senderID = ws.data?.userId || '';
       try {
-        c.sendJSON({ type, status: 'forward', data: r.text, sender: senderID });
-        conn.sendJSON({ type, status: 'ok', message: 'forwarded' });
+        target.send(JSON.stringify({ type, status: 'forward', data: r.text, sender: senderID }) + '\n');
+        this._send(ws, { type, status: 'ok', message: 'forwarded' });
       } catch {
-        this.removeConn(c);
-        conn.sendJSON({ type, status: 'error', message: 'forward failed' });
+        this.handleClose(target, true);
+        this._send(ws, { type, status: 'error', message: 'forward failed' });
       }
       return;
     }
-    // unknown
-    conn.sendJSON({ type, status: 'error', message: `Unknown type: ${type}`, data: '' });
+    this._send(ws, { type, status: 'error', message: `Unknown type: ${type}`, data: '' });
+  }
+  _send(ws, obj) {
+    try {
+      ws.send(JSON.stringify(obj) + '\n');
+    } catch {
+      // ignore send errors
+    }
   }
   sendHeartbeat() {
     this.broadcast({ type: 'heartbeat', status: 'ping' });
   }
 }
 
-function performWebSocketHandshake(req, socket) {
-  const key = req.headers['sec-websocket-key'];
-  const upgrade = (req.headers['upgrade'] || '').toString().toLowerCase();
-  const connection = (req.headers['connection'] || '').toString().toLowerCase();
-  if (!key || !upgrade.includes('websocket') || !connection.includes('upgrade')) {
-    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-    socket.destroy();
-    return null;
-  }
-  const accept = crypto.createHash('sha1')
-    .update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
-    .digest('base64');
-  const headers = [
-    'HTTP/1.1 101 Switching Protocols',
-    'Upgrade: websocket',
-    'Connection: Upgrade',
-    `Sec-WebSocket-Accept: ${accept}`,
-    '\r\n',
-  ].join('\r\n');
-  socket.write(headers);
-  return new WSConn(socket);
-}
-
 async function main() {
-  const isDevPlain = process.env.RT_PLAIN_WS === '1' || (process.env.NODE_ENV || 'development') === 'development';
+  const env = Bun.env;
+  const nodeEnv = env.NODE_ENV || 'development';
+  const isDevPlain = env.RT_PLAIN_WS === '1' || nodeEnv === 'development';
 
-  let server;
-  let proto;
+  let requestHandler = null;
+  let tlsOptions = null;
   let host = '0.0.0.0';
   let port = 3000;
-  let requestHandler = null;
 
-  if (isDevPlain) {
-    // Dev: plain HTTP, WS only; ignore TLS/config.
-    server = http.createServer((req, res) => {
-      res.statusCode = 404;
-      res.setHeader('Content-Type', 'text/plain');
-      res.end('Dev signaling server: use Vite dev server for the app.');
-    });
-    proto = 'http';
-  } else {
-    // Prod: HTTPS server with TLS + SSR + static assets
+  if (!isDevPlain) {
     const { cfg, cfgPath } = await loadConfig();
     const cfgDir = path.dirname(cfgPath);
-    const tlsOpts = await buildTlsOptions(cfgDir, cfg.tls);
+    tlsOptions = await buildTlsOptions(cfgDir, cfg.tls);
     ({ host, port } = parseAddress(cfg.tls?.address || ':3000'));
 
     try {
       const build = await import(pathToFileURL(BUILD_SERVER_PATH).href);
-      requestHandler = createRequestListener({ build, mode: process.env.NODE_ENV || 'production' });
+      requestHandler = createRequestHandler(build, nodeEnv || 'production');
     } catch (err) {
       console.error('Could not load SSR server build at', BUILD_SERVER_PATH);
-      console.error('Did you run `npm run build` in rt-share-web?');
+      console.error('Did you run `bun run build` in rt-share-web?');
       throw err;
     }
-
-    server = https.createServer(tlsOpts);
-    proto = 'https';
-
-    server.on('request', async (req, res) => {
-      try {
-        if (await tryServeStatic(req, res)) return;
-        if (requestHandler) return requestHandler(req, res);
-        res.statusCode = 503; res.setHeader('Content-Type', 'text/plain'); res.end('SSR not available');
-      } catch (err) {
-        console.error('Request error:', err);
-        if (!res.headersSent) {
-          res.statusCode = 500; res.setHeader('Content-Type', 'text/plain'); res.end('Internal Server Error');
-        } else {
-          try { res.end(); } catch {}
-        }
-      }
-    });
   }
 
-  // WebSocket signaling (common)
   const signals = new SignalServer();
-  server.on('upgrade', (req, socket, head) => {
-    try {
-      const url = new URL(req.url, `${proto}://${req.headers.host}`);
-      if (url.pathname !== '/ws') { socket.destroy(); return; }
-      const conn = performWebSocketHandshake(req, socket);
-      if (!conn) return;
-      if (head && head.length) {
-        conn._onData(head);
+
+  const server = Bun.serve({
+    port,
+    hostname: host,
+    tls: tlsOptions
+      ? {
+          cert: tlsOptions.cert,
+          key: tlsOptions.key,
+          ca: tlsOptions.ca,
+          minVersion: tlsOptions.minVersion,
+        }
+      : undefined,
+    fetch: async (req, server) => {
+      const url = new URL(req.url);
+      if (url.pathname === '/ws') {
+        const upgraded = server.upgrade(req, { data: { ip: getUpgradeIP(server, req) } });
+        if (upgraded) return undefined;
+        return new Response('WebSocket upgrade failed', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       }
-      signals.addConn(req, conn);
-    } catch (err) {
-      console.error('Upgrade error:', err);
-      try { socket.destroy(); } catch {}
-    }
+
+      if (isDevPlain) {
+        return new Response('Dev signaling server: use Vite dev server for the app.', {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+
+      try {
+        const staticResponse = await tryServeStatic(req);
+        if (staticResponse) return staticResponse;
+        if (requestHandler) {
+          return await requestHandler(req);
+        }
+        return new Response('SSR not available', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+      } catch (err) {
+        console.error('Request error:', err);
+        return new Response('Internal Server Error', { status: 500, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+      }
+    },
+    websocket: {
+      open(ws) {
+        signals.handleOpen(ws);
+      },
+      message(ws, message) {
+        signals.handleMessage(ws, message);
+      },
+      close(ws) {
+        signals.handleClose(ws);
+      },
+    },
   });
 
   setInterval(() => signals.sendHeartbeat(), 4 * 60 * 1000);
 
-  server.listen(port, host, () => {
-    if (isDevPlain) {
-      console.log(`RT Share dev signaling server listening on ws://${host}:${port}`);
-      console.log('Dev mode: ignoring TLS and config.json');
-    } else {
-      console.log(`RT Share Node server listening on wss://${host}:${port}`);
-    }
-  });
+  if (isDevPlain) {
+    console.log(`RT Share dev signaling server listening on ws://${server.hostname}:${server.port}`);
+    console.log('Dev mode: ignoring TLS and config.json');
+  } else {
+    console.log(`RT Share Bun server listening on wss://${host}:${server.port}`);
+  }
 }
 
 main().catch((err) => {
   console.error(err);
-  process.exit(1);
+  Bun.exit(1);
 });
