@@ -193,7 +193,9 @@ export function RtShare() {
     useEffect(() => {
         // Initialise session ID
         let storedSessionId = localStorage.getItem("sessionId");
-        if (!storedSessionId) {
+        // Migrate legacy numeric IDs to new recognizable IDs
+        const needsMigration = !storedSessionId || /^\d{5}$/.test(storedSessionId);
+        if (needsMigration) {
             storedSessionId = generateSessionId();
             localStorage.setItem("sessionId", storedSessionId);
         }
