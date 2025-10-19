@@ -1,5 +1,51 @@
+function deviceLabelFromUAString(ua: string): string {
+  const s = ua || "";
+  if (/iPhone/i.test(s)) return "iPhone";
+  if (/iPad/i.test(s)) return "iPad";
+  if (/Android/i.test(s)) return "Android";
+  if (/Windows NT/i.test(s)) return "Windows";
+  if (/Macintosh|Mac OS X/i.test(s)) return "Mac";
+  if (/CrOS/i.test(s)) return "ChromeOS";
+  if (/Linux/i.test(s)) return "Linux";
+  if (/Mobile/i.test(s)) return "Mobile";
+  return "Device";
+}
+
+function deviceLabel(): string {
+  try {
+    // Prefer userAgentData if available
+    const nav: any = typeof navigator !== 'undefined' ? navigator : null;
+    const uaDataPlatform = nav?.userAgentData?.platform as string | undefined;
+    if (uaDataPlatform) {
+      const p = uaDataPlatform.toLowerCase();
+      if (p.includes("mac")) return "Mac";
+      if (p.includes("win")) return "Windows";
+      if (p.includes("android")) return "Android";
+      if (p.includes("ios")) return "iPhone"; // generic iOS
+      if (p.includes("chrome os") || p.includes("cros")) return "ChromeOS";
+      if (p.includes("linux")) return "Linux";
+    }
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    return deviceLabelFromUAString(ua);
+  } catch {
+    return "Device";
+  }
+}
+
+function randomLetters(len = 2): string {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let out = "";
+  for (let i = 0; i < len; i++) {
+    const idx = Math.floor(Math.random() * letters.length);
+    out += letters[idx];
+  }
+  return out;
+}
+
 export function generateSessionId() {
-  return Math.floor(10000 + Math.random() * 90000).toString();
+  const label = deviceLabel();
+  const rand = randomLetters(2);
+  return `${label}-${rand}`;
 }
 
 export function formatBytes(bytes: number): string {

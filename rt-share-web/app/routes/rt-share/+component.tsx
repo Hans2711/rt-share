@@ -193,7 +193,8 @@ export function RtShare() {
     useEffect(() => {
         // Initialise session ID
         let storedSessionId = localStorage.getItem("sessionId");
-        if (!storedSessionId) {
+        const isOldNumeric = !!storedSessionId && /^[0-9]{5}$/.test(storedSessionId);
+        if (!storedSessionId || isOldNumeric) {
             storedSessionId = generateSessionId();
             localStorage.setItem("sessionId", storedSessionId);
         }
