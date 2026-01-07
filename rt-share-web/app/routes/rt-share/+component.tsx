@@ -588,27 +588,16 @@ export function RtShare() {
                 // Public STUN servers for NAT traversal
                 { urls: "stun:stun.l.google.com:19302" },
                 { urls: "stun:stun1.l.google.com:19302" },
-                { urls: "stun:stun2.l.google.com:19302" },
-                // Free public TURN servers for restrictive NATs/firewalls
-                // These allow relay connections when direct P2P fails
-                { 
-                    urls: "turn:openrelay.metered.ca:80",
-                    username: "openrelayproject",
-                    credential: "openrelayproject"
-                },
-                { 
+                // TURN server for restrictive NATs/firewalls (replace with your own for reliability)
+                // This allows relay connections when direct P2P fails.
+                {
                     urls: "turn:openrelay.metered.ca:443",
                     username: "openrelayproject",
-                    credential: "openrelayproject"
+                    credential: "openrelayproject",
                 },
-                { 
-                    urls: "turn:openrelay.metered.ca:443?transport=tcp",
-                    username: "openrelayproject",
-                    credential: "openrelayproject"
-                }
             ],
             // Improve connectivity in restrictive networks
-            iceCandidatePoolSize: 10,
+            iceCandidatePoolSize: 2,
             iceTransportPolicy: "all" // Try all connection types
         });
         peerConns.current[userId] = pc;
